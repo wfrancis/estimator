@@ -1,22 +1,13 @@
-# app.py - Updated for Video Generation Focus
+# app.py - Cabinet Measurement API
 import os
-import asyncio
 import uuid
-import base64
 import json
-import requests
-from datetime import datetime
 from typing import Optional, List, Dict
-import sqlite3
-from contextlib import contextmanager
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from google.auth import default
-
 from fastapi.responses import Response
+from pydantic import BaseModel
 
 from cabinet_measurement_service import (
     CabinetMeasurementAssistant,
@@ -32,12 +23,7 @@ from cabinet_solver import (
 )
 from cabinet_elevation_drawing import generate_elevation_svg
 
-# Your actual Google Cloud configuration
-PROJECT_ID = "fashion-460613"
-LOCATION = "us-central1"
-MODEL_ID = "veo-2.0-generate-001"
-
-app = FastAPI(title="Fashion Video Generator API", version="1.0.0")
+app = FastAPI(title="Cabinet Measurement API", version="1.0.0")
 
 # CORS middleware for frontend
 app.add_middleware(
@@ -48,402 +34,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create videos directory
-os.makedirs("generated_videos", exist_ok=True)
-
-
-# Data models
-class VideoGenerationRequest(BaseModel):
-    person_description: str
-    situation_description: str
-    negative_prompt: Optional[str] = None
-    duration: int = 8
-    aspect_ratio: str = "9:16"
-
-
-class VideoOperation(BaseModel):
-    operation_id: str
-    status: str  # "processing", "completed", "error"
-    operation_name: str
-    created_at: str
-    person_description: str
-    situation_description: str
-    full_prompt: str
-    video_file: Optional[str] = None
-    video_url: Optional[str] = None
-
-
-class VeoVideoGenerator:
-    """Handles Veo API interactions for video generation"""
-
-    def __init__(self):
-        # Use default credentials (gcloud auth)
-        self.credentials, _ = default()
-        self.project_id = PROJECT_ID
-        self.base_url = f"https://{LOCATION}-aiplatform.googleapis.com/v1"
-
-    def _get_access_token(self) -> str:
-        """Get fresh access token"""
-        self.credentials.refresh(requests.Request())
-        return self.credentials.token
-
-    def _encode_image_to_base64(self, image_bytes: bytes) -> str:
-        """Convert image bytes to base64"""
-        return base64.b64encode(image_bytes).decode('utf-8')
-
-    async def generate_video(
-            self,
-            person_description: str,
-            situation_description: str,
-            image_bytes: Optional[bytes] = None,
-            duration: int = 8,
-            aspect_ratio: str = "9:16",
-            negative_prompt: Optional[str] = None
-    ) -> Dict:
-        """Generate video using Veo API - matches your successful curl command"""
-
-        # Create comprehensive fashion prompt
-        full_prompt = f"{person_description} {situation_description}, professional lighting, cinematic style, high fashion photography, detailed clothing textures"
-
-        # Build request payload (exactly like your curl command)
-        instance = {"prompt": full_prompt}
-
-        # Add image if provided
-        if image_bytes:
-            instance["image"] = {
-                "bytesBase64Encoded": self._encode_image_to_base64(image_bytes),
-                "mimeType": "image/jpeg"
-            }
-
-        payload = {
-            "instances": [instance],
-            "parameters": {
-                "aspectRatio": aspect_ratio,
-                "durationSeconds": duration,
-                "enhancePrompt": True,
-                "personGeneration": "allow_adult",
-                "sampleCount": 1
-            }
-        }
-
-        if negative_prompt:
-            payload["parameters"]["negativePrompt"] = negative_prompt
-
-        # Make API request (same URL as your curl)
-        url = f"{self.base_url}/projects/{self.project_id}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:predictLongRunning"
-
-        headers = {
-            "Authorization": f"Bearer {self._get_access_token()}",
-            "Content-Type": "application/json"
-        }
-
-        response = requests.post(url, headers=headers, json=payload)
-
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Veo API error: {response.text}"
-            )
-
-        result = response.json()
-
-        # Return the operation info with the full prompt
-        return {
-            "operation_name": result["name"],
-            "full_prompt": full_prompt
-        }
-
-    async def check_operation_status(self, operation_name: str) -> Dict:
-        """Check status of video generation operation"""
-
-        url = f"{self.base_url}/projects/{self.project_id}/locations/{LOCATION}/publishers/google/models/{MODEL_ID}:fetchPredictOperation"
-
-        headers = {
-            "Authorization": f"Bearer {self._get_access_token()}",
-            "Content-Type": "application/json"
-        }
-
-        payload = {"operationName": operation_name}
-
-        response = requests.post(url, headers=headers, json=payload)
-
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"Operation status error: {response.text}"
-            )
-
-        return response.json()
-
-    def save_video_from_base64(self, video_base64: str, operation_id: str) -> str:
-        """Save base64 video to file"""
-        try:
-            # Decode base64 video
-            video_bytes = base64.b64decode(video_base64)
-
-            # Create filename
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"fashion_video_{operation_id}_{timestamp}.mp4"
-            filepath = os.path.join("generated_videos", filename)
-
-            # Save video file
-            with open(filepath, "wb") as f:
-                f.write(video_bytes)
-
-            print(f"✅ Video saved: {filepath}")
-            return filepath
-
-        except Exception as e:
-            print(f"❌ Error saving video: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to save video: {e}")
-
-
-# Initialize components
-video_generator = VeoVideoGenerator()
-operations_store: Dict[str, VideoOperation] = {}
-
-
-# Initialize on startup
-@app.on_event("startup")
-async def startup_event():
-    print(f"🎬 Fashion Video Generator API started!")
-    print(f"📊 Project: {PROJECT_ID}")
-    print(f"🌍 Location: {LOCATION}")
-    print(f"🤖 Model: {MODEL_ID}")
-    print(f"📁 Videos will be saved to: ./generated_videos/")
-
-
-# API Endpoints
-@app.get("/")
-async def root():
-    return {
-        "message": "Fashion Video Generator API",
-        "version": "1.0.0",
-        "project": PROJECT_ID,
-        "model": MODEL_ID,
-        "description": "Generate fashion videos by describing a person and situation"
-    }
-
-
-@app.post("/generate-video")
-async def generate_fashion_video(
-        person_description: str = Form(..., description="Describe the person and their outfit"),
-        situation_description: str = Form(..., description="Describe the situation/setting"),
-        image: Optional[UploadFile] = File(None, description="Optional reference image"),
-        negative_prompt: Optional[str] = Form(None, description="What to avoid in the video"),
-        duration: int = Form(8, description="Video duration in seconds (5-8)"),
-        aspect_ratio: str = Form("9:16", description="Video aspect ratio (9:16 or 16:9)")
-):
-    """
-    Generate a fashion video based on person and situation descriptions
-
-    Example:
-    - person_description: "A fashionable woman wearing an elegant black dress and white sneakers"
-    - situation_description: "walking confidently down a modern city street"
-    """
-
-    try:
-        # Read image if provided
-        image_bytes = None
-        if image:
-            image_bytes = await image.read()
-
-        # Generate video (same as your successful curl command)
-        operation_result = await video_generator.generate_video(
-            person_description=person_description,
-            situation_description=situation_description,
-            image_bytes=image_bytes,
-            duration=duration,
-            aspect_ratio=aspect_ratio,
-            negative_prompt=negative_prompt
-        )
-
-        # Store operation
-        operation_id = str(uuid.uuid4())
-        video_op = VideoOperation(
-            operation_id=operation_id,
-            status="processing",
-            operation_name=operation_result["operation_name"],
-            created_at=datetime.now().isoformat(),
-            person_description=person_description,
-            situation_description=situation_description,
-            full_prompt=operation_result["full_prompt"]
-        )
-
-        operations_store[operation_id] = video_op
-
-        return {
-            "operation_id": operation_id,
-            "status": "processing",
-            "message": "Video generation started successfully! 🎬",
-            "full_prompt": operation_result["full_prompt"],
-            "estimated_completion": "2-5 minutes",
-            "check_status_url": f"/status/{operation_id}"
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
-
-
-@app.get("/status/{operation_id}")
-async def check_video_status(operation_id: str):
-    """Check video generation status and return results"""
-
-    if operation_id not in operations_store:
-        raise HTTPException(status_code=404, detail="Operation not found")
-
-    video_op = operations_store[operation_id]
-
-    try:
-        # Check operation status
-        result = await video_generator.check_operation_status(video_op.operation_name)
-
-        if result.get("done", False):
-            # Video is complete!
-            response_data = result.get("response", {})
-
-            # Handle base64 video response (like your curl result)
-            if "videos" in response_data and response_data["videos"]:
-                video_base64 = response_data["videos"][0]["bytesBase64Encoded"]
-
-                # Save video to file
-                video_filepath = video_generator.save_video_from_base64(video_base64, operation_id)
-
-                # Update operation
-                video_op.status = "completed"
-                video_op.video_file = video_filepath
-                operations_store[operation_id] = video_op
-
-                return {
-                    "operation_id": operation_id,
-                    "status": "completed",
-                    "message": "Video generation completed! 🎉",
-                    "person_description": video_op.person_description,
-                    "situation_description": video_op.situation_description,
-                    "full_prompt": video_op.full_prompt,
-                    "video_file": video_filepath,
-                    "download_url": f"/download-video/{operation_id}",
-                    "watch_url": f"/watch-video/{operation_id}"
-                }
-
-            # Handle GCS URI response (if using cloud storage)
-            elif "generatedSamples" in response_data:
-                video_uri = response_data["generatedSamples"][0]["video"]["uri"]
-
-                video_op.status = "completed"
-                video_op.video_url = video_uri
-                operations_store[operation_id] = video_op
-
-                return {
-                    "operation_id": operation_id,
-                    "status": "completed",
-                    "message": "Video generation completed! 🎉",
-                    "person_description": video_op.person_description,
-                    "situation_description": video_op.situation_description,
-                    "full_prompt": video_op.full_prompt,
-                    "video_uri": video_uri
-                }
-
-            else:
-                raise HTTPException(status_code=500, detail="No video data in response")
-
-        else:
-            return {
-                "operation_id": operation_id,
-                "status": "processing",
-                "message": "Video still generating... ⏳",
-                "progress": "This usually takes 2-5 minutes",
-                "person_description": video_op.person_description,
-                "situation_description": video_op.situation_description,
-                "full_prompt": video_op.full_prompt
-            }
-
-    except Exception as e:
-        video_op.status = "error"
-        operations_store[operation_id] = video_op
-        raise HTTPException(status_code=500, detail=f"Status check failed: {str(e)}")
-
-
-@app.get("/download-video/{operation_id}")
-async def download_video(operation_id: str):
-    """Download the generated video file"""
-
-    if operation_id not in operations_store:
-        raise HTTPException(status_code=404, detail="Operation not found")
-
-    video_op = operations_store[operation_id]
-
-    if video_op.status != "completed" or not video_op.video_file:
-        raise HTTPException(status_code=400, detail="Video not ready or not found")
-
-    if not os.path.exists(video_op.video_file):
-        raise HTTPException(status_code=404, detail="Video file not found")
-
-    return FileResponse(
-        video_op.video_file,
-        media_type='video/mp4',
-        filename=f"fashion_video_{operation_id}.mp4"
-    )
-
-
-@app.get("/watch-video/{operation_id}")
-async def watch_video(operation_id: str):
-    """Stream the video for watching in browser"""
-
-    if operation_id not in operations_store:
-        raise HTTPException(status_code=404, detail="Operation not found")
-
-    video_op = operations_store[operation_id]
-
-    if video_op.status != "completed" or not video_op.video_file:
-        raise HTTPException(status_code=400, detail="Video not ready or not found")
-
-    if not os.path.exists(video_op.video_file):
-        raise HTTPException(status_code=404, detail="Video file not found")
-
-    return FileResponse(video_op.video_file, media_type='video/mp4')
-
-
-@app.get("/operations")
-async def list_operations():
-    """List all video operations"""
-    return {
-        "operations": [
-            {
-                "operation_id": op_id,
-                "status": op.status,
-                "created_at": op.created_at,
-                "person_description": op.person_description,
-                "situation_description": op.situation_description,
-                "video_file": op.video_file,
-                "video_url": op.video_url
-            }
-            for op_id, op in operations_store.items()
-        ]
-    }
-
-
-@app.delete("/operations/{operation_id}")
-async def delete_operation(operation_id: str):
-    """Delete an operation and its video file"""
-
-    if operation_id not in operations_store:
-        raise HTTPException(status_code=404, detail="Operation not found")
-
-    video_op = operations_store[operation_id]
-
-    # Delete video file if exists
-    if video_op.video_file and os.path.exists(video_op.video_file):
-        os.remove(video_op.video_file)
-
-    # Remove from store
-    del operations_store[operation_id]
-
-    return {"message": f"Operation {operation_id} deleted successfully"}
-
-
-# ===== CABINET MEASUREMENT ENDPOINTS =====
-
 # In-memory store for cabinet analysis sessions
 cabinet_sessions: Dict[str, dict] = {}
 
@@ -452,6 +42,18 @@ def _get_cabinet_assistant() -> CabinetMeasurementAssistant:
     """Get or create cabinet measurement assistant."""
     api_key = os.environ.get("OPENAI_API_KEY", "")
     return CabinetMeasurementAssistant(openai_api_key=api_key)
+
+
+# ===== API Endpoints =====
+
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Cabinet Measurement API",
+        "version": "1.0.0",
+        "description": "AI-powered cabinet measurement from kitchen photos",
+    }
 
 
 @app.get("/cabinet/guide")
@@ -604,7 +206,6 @@ async def get_measurement_report(session_id: str):
 
 def _analysis_to_sections(analysis: PhotoAnalysisResult) -> List[SectionEstimate]:
     """Convert PhotoAnalysisResult cabinet sections to SectionEstimate list for the solver."""
-    # Calculate total estimated width for proportions
     total_est = sum(
         s.estimated_width for s in analysis.cabinet_sections
         if s.estimated_width and s.cabinet_type in ("base", "appliance_opening")
@@ -908,7 +509,7 @@ async def confirm_measurements(session_id: str):
 if __name__ == "__main__":
     import uvicorn
 
-    print("Starting Fashion + Cabinet Measurement API...")
+    print("Starting Cabinet Measurement API...")
     print(f"API docs: http://localhost:8000/docs")
 
     uvicorn.run(
@@ -916,5 +517,5 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=True,
-        log_level="info"
+        log_level="info",
     )
