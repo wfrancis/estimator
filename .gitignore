@@ -2,3 +2,10 @@ __pycache__/
 *.pyc
 *.pyo
 .env
+.idea/
+.claude/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
