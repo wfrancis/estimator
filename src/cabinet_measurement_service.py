@@ -180,28 +180,34 @@ class MeasurementReport(BaseModel):
 
 # ===== PROMPT TEMPLATES =====
 
-CABINET_DETECTION_PROMPT = """You are a cabinet measurement assistant helping a cabinet maker on-site.
+CABINET_DETECTION_PROMPT = """You are an expert cabinet measurement assistant with 20 years of kitchen remodeling experience.
 
 Analyze this kitchen photo and identify EVERY cabinet section, appliance opening, gap, and reference object.
 The person on-site will only need to measure 1-2 things — the AI will figure out the rest.
 
+BE CONFIDENT AND DECISIVE. Cabinets are ALWAYS factory standard widths (9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 42, 48 inches). Use your knowledge of typical kitchen layouts:
+- Sink bases are usually 30" or 36" (count doors: 2 doors = 30" or 33", 2 doors + center drawer = 36")
+- Narrow cabinets flanking sink are usually 15" or 18"
+- Dishwashers are ALWAYS 24"
+- Standard fridges are 30", 33", or 36" — look at how much space it takes relative to adjacent cabinets
+- Wall cabinets above a standard base cabinet are usually the SAME WIDTH as the base below
+- Wall cabinets come in standard heights: 12", 15", 18", 24", 30", 36", 42"
+
 CRITICAL TASKS:
 1. Identify every cabinet, appliance opening, and reference object
 2. Estimate PROPORTIONS — what fraction of the total wall run each section occupies
-3. Detect FILLER STRIPS — gaps between cabinets and walls, or between adjacent cabinets
+3. Detect FILLER STRIPS — gaps between cabinets and walls
 4. Group SAME-SIZE cabinets — which cabinets appear to be the same width?
-5. Identify APPLIANCE TYPES — what specific appliance fits each opening?
-6. Identify GAPS in the wall cabinet row — range hoods, vent hoods, open space above the fridge,
-   or any area where there is NO wall cabinet. Report each gap as a section with
-   cabinet_type "wall_gap" and describe what's there (e.g., "range hood gap", "open above fridge").
-7. Report INDIVIDUAL WALL CABINET HEIGHTS — not all wall cabinets are the same height.
-   Cabinets above a range hood may be 12-18", standard wall cabinets are 30-42",
-   cabinets above a fridge may be 12-24". Use estimated_height accurately for each.
+5. Identify APPLIANCE TYPES with confidence — use visual cues (handles, size relative to neighbors)
+6. Identify GAPS in the wall cabinet row — range hoods, vent hoods, open space above fridge.
+   Report each gap as cabinet_type "wall_gap". Do NOT report gaps as regular wall cabinets.
+7. Each wall cabinet gets its OWN section with its OWN width and height. Do NOT group multiple
+   wall cabinets into a single section. If you see 3 wall cabinet doors, that's 3 sections.
+8. Report INDIVIDUAL WALL CABINET HEIGHTS accurately (12-42").
 
-IMPORTANT: List ALL sections in LEFT-TO-RIGHT order. First list ALL base-level sections (base cabinets
-+ appliance openings like dishwasher, range, fridge), then ALL wall-level sections (wall cabinets +
-wall_gap sections). Base sections and wall sections have SEPARATE proportion systems — base proportions
-sum to ~1.0, wall proportions sum to ~1.0.
+IMPORTANT ORDERING: List ALL base sections first (left to right), then ALL wall sections (left to right).
+Each wall section's above_base_ids MUST reference ONLY base section IDs that actually exist in your base list.
+Base proportions sum to ~1.0. Wall proportions sum to ~1.0 separately.
 
 For each section provide:
 - id: unique ID (e.g., "base_1", "base_2", "wall_1", "wall_gap_1")
@@ -397,7 +403,7 @@ class CabinetMeasurementAssistant:
             max_completion_tokens=4000,
             temperature=0.1,
             messages=[
-                {"role": "system", "content": "You are a precise cabinet measurement assistant. Return only valid JSON."},
+                {"role": "system", "content": "You are a precise, confident cabinet measurement expert with 20+ years experience. You know standard cabinet sizes by heart. Be DECISIVE about your estimates — if a cabinet looks like 15\", say 15\" with 0.85+ confidence. Only use low confidence (<0.6) when genuinely ambiguous. Return only valid JSON."},
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
                     {"type": "image_url", "image_url": {

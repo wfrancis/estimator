@@ -36,7 +36,7 @@ class DrawingConfig:
     # Margins (pixels)
     MARGIN_LEFT = 90       # room for height dimension labels
     MARGIN_RIGHT = 40
-    MARGIN_TOP = 50        # room for title
+    MARGIN_TOP = 80        # room for title + wall cabinet dimension labels
     MARGIN_BOTTOM = 120    # room for width dimensions + legend
 
     # Kitchen geometry (inches) — used as defaults when not measured
@@ -336,6 +336,7 @@ def layout_from_solver(
 
     if wall_cabinet_sections:
         wx_fallback = cfg.MARGIN_LEFT  # fallback if no above_base_ids
+        prev_dim_y = None  # track previous dimension y to avoid overlap
         for section in wall_cabinet_sections:
             is_gap = section.cabinet_type == "wall_gap"
 
@@ -357,21 +358,16 @@ def layout_from_solver(
             sec_height = section.estimated_height or cfg.WALL_CABINET_HEIGHT
             sec_height_px = sec_height * scale
 
-            # Position: align to base cabinets below if above_base_ids available
+            # Position: align x to base cabinets below, but keep solved width
             if section.above_base_ids:
                 base_xs = [base_pos_lookup[bid][0] for bid in section.above_base_ids if bid in base_pos_lookup]
-                base_rights = [base_pos_lookup[bid][0] + base_pos_lookup[bid][1] for bid in section.above_base_ids if bid in base_pos_lookup]
-                if base_xs and base_rights:
+                if base_xs:
                     wx = min(base_xs)
-                    span_px = max(base_rights) - wx
-                    w_px = span_px  # match span of base cabinets below
-                    w_inches = w_px / scale
                 else:
                     wx = wx_fallback
-                    w_px = w_inches * scale
             else:
                 wx = wx_fallback
-                w_px = w_inches * scale
+            w_px = w_inches * scale
 
             # Wall cabinets bottom-align to backsplash_top, shorter ones float up
             wall_y = backsplash_top - sec_height_px
@@ -391,9 +387,18 @@ def layout_from_solver(
                 group_id=group_lookup.get(section.section_id),
             ))
 
+            # Position dimension line just above this specific cabinet.
+            # Stagger upward if it would overlap the previous dimension line.
+            dim_label_y = wall_y - 8
+            if prev_dim_y is not None and abs(dim_label_y - prev_dim_y) < cfg.DIM_TIER_GAP:
+                dim_label_y = prev_dim_y - cfg.DIM_TIER_GAP
+            # Clamp so it doesn't overlap the title area
+            dim_label_y = max(dim_label_y, cfg.MARGIN_TOP)
+            prev_dim_y = dim_label_y
+
             wall_dims.append(DimensionLine(
-                x1=wx, y1=wall_y - 8,
-                x2=wx + w_px, y2=wall_y - 8,
+                x1=wx, y1=dim_label_y,
+                x2=wx + w_px, y2=dim_label_y,
                 label=f'{w_inches:.0f}"' if w_inches == int(w_inches) else f'{w_inches:.1f}"',
                 source="gap" if is_gap else w_source,
                 orientation="horizontal", confidence=w_conf,
@@ -599,9 +604,9 @@ SVG_TEMPLATE = Template("""<svg xmlns="http://www.w3.org/2000/svg"
   </defs>
 
   <!-- Title -->
-  <text x="{{ canvas_width / 2 }}" y="20" text-anchor="middle"
+  <text x="{{ canvas_width / 2 }}" y="30" text-anchor="middle"
         font-size="16" font-weight="bold" fill="#333">{{ title }}</text>
-  <text x="{{ canvas_width / 2 }}" y="36" text-anchor="middle"
+  <text x="{{ canvas_width / 2 }}" y="46" text-anchor="middle"
         font-size="10" fill="#888">Scale: 1" = {{ "%.1f"|format(scale) }}px | Tap a cabinet to input measurement</text>
 
   <!-- Wall background -->
@@ -652,6 +657,15 @@ SVG_TEMPLATE = Template("""<svg xmlns="http://www.w3.org/2000/svg"
   {% for cab in wall_cabinets %}
     <g id="cab-{{ cab.section_id }}" class="cabinet tappable" data-section-id="{{ cab.section_id }}"
        data-group-id="{{ cab.group_id or '' }}" style="cursor: pointer;">
+      {% if cab.cabinet_type == "wall_gap" %}
+      <!-- Wall gap: dashed outline only, no fill -->
+      <rect x="{{ cab.x }}" y="{{ cab.y }}" width="{{ cab.width_px }}" height="{{ cab.height_px }}"
+            fill="none" stroke="#ccc" stroke-width="1"
+            stroke-dasharray="4,4"/>
+      <text x="{{ cab.x + cab.width_px / 2 }}" y="{{ cab.y + cab.height_px / 2 }}"
+            text-anchor="middle" dominant-baseline="middle"
+            font-size="12" fill="#999" font-family="{{ font_family }}">{{ cab.label }}</text>
+      {% else %}
       {% if cab.group_id and group_colors[cab.group_id] %}
       <rect x="{{ cab.x }}" y="{{ cab.y }}" width="{{ cab.width_px }}" height="{{ cab.height_px }}"
             fill="{{ group_colors[cab.group_id] }}" stroke="none"/>
@@ -661,6 +675,7 @@ SVG_TEMPLATE = Template("""<svg xmlns="http://www.w3.org/2000/svg"
             stroke-width="{{ '2' if cab.source == 'measured' else '1.5' }}"
             stroke-dasharray="{{ source_dash(cab.source) }}"/>
       {{ cabinet_details[cab.section_id] }}
+      {% endif %}
     </g>
   {% endfor %}
   </g>
