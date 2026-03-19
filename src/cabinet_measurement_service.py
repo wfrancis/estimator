@@ -9,12 +9,13 @@ import base64
 import io
 import json
 import logging
+import os
 import re
 from typing import Dict, List, Optional, Tuple, Any
 
 import numpy as np
 from PIL import Image, ImageEnhance, ImageOps
-from openai import AsyncOpenAI
+import anthropic
 from pydantic import BaseModel, Field, field_validator
 
 logging.basicConfig(level=logging.INFO)
@@ -180,81 +181,70 @@ class MeasurementReport(BaseModel):
 
 # ===== PROMPT TEMPLATES =====
 
-CABINET_DETECTION_PROMPT = """You are an expert cabinet measurement assistant with 20 years of kitchen remodeling experience.
 
-Analyze this kitchen photo and identify EVERY cabinet section, appliance opening, gap, and reference object.
-The person on-site will only need to measure 1-2 things — the AI will figure out the rest.
+# ===== TWO-PASS PROMPTS =====
 
-BE CONFIDENT AND DECISIVE. Cabinets are ALWAYS factory standard widths (9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 42, 48 inches). Use your knowledge of typical kitchen layouts:
-- Sink bases are usually 30" or 36" (count doors: 2 doors = 30" or 33", 2 doors + center drawer = 36")
-- Narrow cabinets flanking sink are usually 15" or 18"
-- Dishwashers are ALWAYS 24"
-- Standard fridges are 30", 33", or 36" — look at how much space it takes relative to adjacent cabinets
-- Wall cabinets above a standard base cabinet are usually the SAME WIDTH as the base below
-- Wall cabinets come in standard heights: 12", 15", 18", 24", 30", 36", 42"
+PASS1_OBSERVE_PROMPT = """Look at this kitchen photo carefully. Describe EXACTLY what you see, as if you're a cabinet maker standing in this kitchen.
 
-CRITICAL TASKS:
-1. Identify every cabinet, appliance opening, and reference object
-2. Estimate PROPORTIONS — what fraction of the total wall run each section occupies
-3. Detect FILLER STRIPS — gaps between cabinets and walls
-4. Group SAME-SIZE cabinets — which cabinets appear to be the same width?
-5. Identify APPLIANCE TYPES with confidence — use visual cues (handles, size relative to neighbors)
-6. Identify GAPS in the wall cabinet row — range hoods, vent hoods, open space above fridge.
-   Report each gap as cabinet_type "wall_gap". Do NOT report gaps as regular wall cabinets.
-7. Each wall cabinet gets its OWN section with its OWN width and height. Do NOT group multiple
-   wall cabinets into a single section. If you see 3 wall cabinet doors, that's 3 sections.
-8. Report INDIVIDUAL WALL CABINET HEIGHTS accurately (12-42").
+Go left to right across the photo. For each position, describe:
+- BASE LEVEL: What's there? A cabinet (how many doors? drawers on top?), an empty space (can you see the floor/wall behind?), an appliance?
+- WALL LEVEL: What's above it? A wall cabinet (how many doors? how tall?), a range hood, empty space?
+- Any gaps, filler strips, or transitions between items?
 
-IMPORTANT ORDERING: List ALL base sections first (left to right), then ALL wall sections (left to right).
-Each wall section's above_base_ids MUST reference ONLY base section IDs that actually exist in your base list.
-Base proportions sum to ~1.0. Wall proportions sum to ~1.0 separately.
+Be very specific about:
+1. How many SEPARATE cabinet boxes you see (look for vertical seams between cabinets)
+2. Where the range hood / vent is (it's a metallic strip — which cabinets is it below?)
+3. Any spaces with NO cabinet (you can see the floor or wall behind)
+4. The refrigerator — where is it, and is there anything above it?
+5. For EACH base cabinet: exactly how many doors and how many drawers? A narrow cabinet with 1 door + 1 drawer on top is 15-18". A wider cabinet with 2 doors + 1 drawer is 30-36".
 
-For each section provide:
-- id: unique ID (e.g., "base_1", "base_2", "wall_1", "wall_gap_1")
-- cabinet_type: base, wall, wall_gap, tall, corner, appliance_opening
-- position: description relative to other items
-- door_count, drawer_count: what's visible (0 for gaps and appliances)
-- estimated_width, estimated_height: your best guess in inches
-- confidence: 0-1 (be conservative)
-- pixel_proportion: fraction of total run this section occupies (base proportions sum to ~1.0, wall proportions sum to ~1.0 separately)
-- is_appliance: true if this is an appliance opening (fridge, range, dishwasher)
-- appliance_type: specific type if appliance (use keys: refrigerator_30, refrigerator_33, refrigerator_36, range_30, range_36, dishwasher, microwave_otr, sink_single_bowl, sink_double_bowl)
-- filler_detected_left, filler_detected_right: true if filler strip detected
-- same_size_as: list of other section IDs that appear to be the same width
-- needs_tape_measure: false for appliances and gaps, true for cabinets
-- measurement_priority: "required" for ambiguous, "verify" for standard, "optional" for appliances/gaps
-- notes: any special observations
-- above_base_ids: (WALL AND WALL_GAP SECTIONS ONLY) list of base section IDs this wall element
-  sits directly above. E.g., a wall cabinet above the sink base would be ["base_3"]. A range hood
-  gap above the range would be ["base_range"]. This is CRITICAL for vertical alignment in the drawing.
+Do NOT output JSON. Just describe what you see in plain English, left to right."""
 
-STANDARD CABINET WIDTHS (factory sizes): 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 42, 48 inches.
-All cabinets MUST be one of these widths. Estimate which standard width each cabinet most likely is.
+
+PASS2_STRUCTURE_PROMPT = """Based on your observation of this kitchen photo, convert your description into structured cabinet data.
+
+YOUR OBSERVATION:
+{observation}
+
+Standard cabinet widths (factory sizes): 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 42, 48 inches.
+Standard wall cabinet heights: 12, 15, 18, 24, 30, 36, 42 inches.
+
+Rules:
+- TRUST YOUR OBSERVATION. If you described separate cabinet boxes in your observation, keep them as separate sections in the JSON. Do NOT merge two single-door cabinets into one two-door cabinet.
+- List ALL base sections first (left to right), then ALL wall sections (left to right)
+- A single-door base cabinet with one drawer is usually 15" or 18"
+- A two-door sink base is usually 30" or 36"
+- Empty spaces where you can see the floor = appliance_opening (is_appliance=false)
+- Fridges are appliance_opening with appliance_type like "refrigerator_30"
+- Range hoods/vents = wall_gap
+- Empty space above fridge = wall_gap (NOT a hood)
+- pixel_proportion: fraction of total base run (base props sum to ~1.0, wall props sum to ~1.0 separately)
+- above_base_ids: which base section(s) each wall section sits directly above
 
 {reference_context}
 
-Return your analysis as JSON matching this structure:
+Return JSON:
 {{
   "cabinet_sections": [
     {{
-      "id": "string",
-      "cabinet_type": "base|wall|wall_gap|tall|corner|appliance_opening",
-      "position": "string",
+      "id": "base_1|wall_1|wall_gap_1|etc",
+      "cabinet_type": "base|wall|wall_gap|appliance_opening",
+      "position": "description",
       "door_count": 0,
       "drawer_count": 0,
-      "estimated_width": null or number,
-      "estimated_height": null or number,
+      "estimated_width": number,
+      "estimated_height": number or null,
       "confidence": 0.0-1.0,
       "pixel_proportion": 0.0-1.0,
       "is_appliance": false,
-      "appliance_type": null or "string",
+      "appliance_type": null or "refrigerator_30|sink_single_bowl|etc",
       "filler_detected_left": false,
       "filler_detected_right": false,
-      "same_size_as": [] or ["id1", "id2"],
+      "same_size_as": [],
       "needs_tape_measure": true,
       "measurement_priority": "required|verify|optional",
       "notes": "string",
-      "above_base_ids": null or ["base_1", "base_2"]
+      "above_base_ids": null or ["base_1"]
     }}
   ],
   "reference_objects": [
@@ -266,11 +256,11 @@ Return your analysis as JSON matching this structure:
       "reliability": 0.0-1.0
     }}
   ],
-  "layout_description": "string describing the overall layout",
+  "layout_description": "string",
   "wall_count": 1,
   "has_corner": false,
-  "photo_quality_notes": ["list of issues with the photo"],
-  "suggested_additional_photos": ["list of additional photos that would help"]
+  "photo_quality_notes": [],
+  "suggested_additional_photos": []
 }}"""
 
 
@@ -368,8 +358,10 @@ class CabinetMeasurementAssistant:
     4. Final report with everything needed for production
     """
 
-    def __init__(self, openai_api_key: str):
-        self.client = AsyncOpenAI(api_key=openai_api_key)
+    def __init__(self, openai_api_key: str = "", anthropic_api_key: str = ""):
+        self.anthropic_client = anthropic.AsyncAnthropic(
+            api_key=anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        )
         self.standards = KitchenStandards()
 
     # ===== STEP 1: Analyze photo and generate checklist =====
@@ -396,25 +388,52 @@ class CabinetMeasurementAssistant:
                 lines.append(f"  - {obj}: {dim} inches")
             reference_context = "\n".join(lines)
 
-        prompt = CABINET_DETECTION_PROMPT.format(reference_context=reference_context)
-
-        response = await self.client.chat.completions.create(
-            model="gpt-5.4",
-            max_completion_tokens=4000,
+        # ===== PASS 1: OBSERVE — describe what you see in plain English =====
+        logger.info("Pass 1: Observing kitchen photo...")
+        pass1_response = await self.anthropic_client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=2000,
             temperature=0.0,
-            seed=42,
+            system="You are a cabinet maker with 20 years experience. Look at this kitchen photo and describe exactly what you see. Be precise about cabinet counts, door counts, and layout.",
             messages=[
-                {"role": "system", "content": "You are a precise, confident cabinet measurement expert with 20+ years experience. You know standard cabinet sizes by heart. Be DECISIVE about your estimates — if a cabinet looks like 15\", say 15\" with 0.85+ confidence. Only use low confidence (<0.6) when genuinely ambiguous. Return only valid JSON."},
                 {"role": "user", "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {
-                        "url": f"data:{media_type};base64,{base64_image}",
+                    {"type": "image", "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": base64_image,
                     }},
+                    {"type": "text", "text": PASS1_OBSERVE_PROMPT},
+                ]},
+            ],
+        )
+        observation = pass1_response.content[0].text
+        logger.info(f"Pass 1 observation:\n{observation}")
+
+        # ===== PASS 2: STRUCTURE — convert observation to JSON =====
+        logger.info("Pass 2: Structuring observation into JSON...")
+        prompt = PASS2_STRUCTURE_PROMPT.format(
+            observation=observation,
+            reference_context=reference_context,
+        )
+
+        pass2_response = await self.anthropic_client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=4000,
+            temperature=0.0,
+            system="You are a precise cabinet measurement expert. Convert the observation into structured JSON. Be DECISIVE about standard widths. Return only valid JSON.",
+            messages=[
+                {"role": "user", "content": [
+                    {"type": "image", "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": base64_image,
+                    }},
+                    {"type": "text", "text": prompt},
                 ]},
             ],
         )
 
-        data = self._extract_json(response.choices[0].message.content)
+        data = self._extract_json(pass2_response.content[0].text)
         return PhotoAnalysisResult(**data)
 
     def generate_measurement_checklist(self, analysis: PhotoAnalysisResult) -> Dict[str, Any]:
@@ -607,22 +626,24 @@ class CabinetMeasurementAssistant:
             ),
         )
 
-        response = await self.client.chat.completions.create(
-            model="gpt-5.4",
-            max_completion_tokens=3000,
+        response = await self.anthropic_client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=3000,
             temperature=0.1,
+            system="You are a cabinet measurement expert. Catch errors. Return only valid JSON.",
             messages=[
-                {"role": "system", "content": "You are a cabinet measurement expert. Catch errors. Return only valid JSON."},
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {
-                        "url": f"data:{media_type};base64,{base64_image}",
+                    {"type": "image", "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": base64_image,
                     }},
                 ]},
             ],
         )
 
-        return self._extract_json(response.choices[0].message.content)
+        return self._extract_json(response.content[0].text)
 
     # ===== STEP 3: Fill gaps =====
 
@@ -665,22 +686,24 @@ class CabinetMeasurementAssistant:
             ),
         )
 
-        response = await self.client.chat.completions.create(
-            model="gpt-5.4",
-            max_completion_tokens=3000,
+        response = await self.anthropic_client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=3000,
             temperature=0.1,
+            system="You are a cabinet measurement assistant. Estimate conservatively. Return only valid JSON.",
             messages=[
-                {"role": "system", "content": "You are a cabinet measurement assistant. Estimate conservatively. Return only valid JSON."},
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {
-                        "url": f"data:{media_type};base64,{base64_image}",
+                    {"type": "image", "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": base64_image,
                     }},
                 ]},
             ],
         )
 
-        return self._extract_json(response.choices[0].message.content)
+        return self._extract_json(response.content[0].text)
 
     # ===== STEP 4: Final report =====
 

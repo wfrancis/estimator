@@ -1,0 +1,476 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="618.0" height="536.0"
+     viewBox="0 0 618.0 536.0"
+     style="background: white; font-family: Arial, Helvetica, sans-serif;">
+
+  <defs>
+    <!-- Arrowhead marker for dimension lines -->
+    <marker id="arrow-start" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">
+      <path d="M8,0 L0,3 L8,6" fill="#1565C0" stroke="none"/>
+    </marker>
+    <marker id="arrow-end" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#1565C0" stroke="none"/>
+    </marker>
+
+    <!-- Filler hatch pattern -->
+    <pattern id="filler-hatch" width="6" height="6" patternUnits="userSpaceOnUse"
+             patternTransform="rotate(45)">
+      <line x1="0" y1="0" x2="0" y2="6" stroke="#E65100" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+
+  <!-- Title -->
+  <text x="309.0" y="30" text-anchor="middle"
+        font-size="16" font-weight="bold" fill="#333">Cabinet Elevation — Solved</text>
+  <text x="309.0" y="46" text-anchor="middle"
+        font-size="10" fill="#888">Scale: 1" = 4.0px | Tap a cabinet to input measurement</text>
+
+  <!-- Wall background -->
+  <rect x="90" y="80"
+        width="488.0" height="336.0"
+        fill="#F5F5F5" stroke="none"/>
+
+  <!-- Countertop -->
+  <rect x="90" y="272.0" width="488.0" height="6.0"
+        fill="#8D6E63" stroke="#5D4037" stroke-width="1.5" rx="1"/>
+
+  <!-- Floor line -->
+  <line x1="80" y1="416.0"
+        x2="588.0" y2="416.0"
+        stroke="#5D4037" stroke-width="2.5"/>
+
+  <!-- ===== BASE CABINETS ===== -->
+  <g id="base-cabinets">
+  
+    <g id="cab-base_1" class="cabinet tappable" data-section-id="base_1"
+       data-group-id="" style="cursor: pointer;">
+      
+      <rect x="94.0" y="278.0" width="72.0" height="138.0"
+            fill="#FAFAF0" fill-opacity="0.7" stroke="#1565C0"
+            stroke-width="1.5"
+            stroke-dasharray="none"/>
+      <rect x="97.0" y="281.0" width="66.0" height="39.4" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <line x1="120.0" y1="301.7" x2="140.0" y2="301.7" stroke="#999" stroke-width="1.5" stroke-linecap="round"/>
+    <rect x="98.0" y="322.4" width="64.0" height="89.7" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <rect x="103.6" y="329.0" width="52.8" height="76.5" fill="none" stroke="#CCC" stroke-width="0.5" rx="1"/>
+    <circle cx="153.4" cy="353.79499999999996" r="2" fill="#999" stroke="none"/>
+    <text x="162.0" y="412.0" text-anchor="end" font-size="7" fill="#aaa" font-family="Arial, Helvetica, sans-serif">base_1</text>
+    </g>
+  
+    <g id="cab-base_2" class="cabinet tappable" data-section-id="base_2"
+       data-group-id="" style="cursor: pointer;">
+      
+      <rect x="166.0" y="278.0" width="96.0" height="138.0"
+            fill="#FAFAF0" fill-opacity="0.7" stroke="#1565C0"
+            stroke-width="1.5"
+            stroke-dasharray="none"/>
+      <rect x="170.0" y="281.0" width="88.0" height="132.0" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <rect x="178.0" y="290.0" width="72.0" height="114.0" fill="none" stroke="#CCC" stroke-width="0.5" rx="1"/>
+    <circle cx="247.0" cy="327.2" r="2" fill="#999" stroke="none"/>
+    <text x="258.0" y="412.0" text-anchor="end" font-size="7" fill="#aaa" font-family="Arial, Helvetica, sans-serif">base_2</text>
+    </g>
+  
+    <g id="cab-base_3" class="cabinet tappable" data-section-id="base_3"
+       data-group-id="" style="cursor: pointer;">
+      
+      <rect x="262.0" y="278.0" width="132.0" height="138.0"
+            fill="#FAFAF0" fill-opacity="0.7" stroke="#1565C0"
+            stroke-width="1.5"
+            stroke-dasharray="none"/>
+      <rect x="265.0" y="281.0" width="126.0" height="39.4" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <line x1="318.0" y1="301.7" x2="338.0" y2="301.7" stroke="#999" stroke-width="1.5" stroke-linecap="round"/>
+    <rect x="266.0" y="322.4" width="61.0" height="89.7" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <rect x="271.3" y="328.7" width="50.4" height="77.1" fill="none" stroke="#CCC" stroke-width="0.5" rx="1"/>
+    <circle cx="318.7" cy="353.79499999999996" r="2" fill="#999" stroke="none"/>
+    <rect x="329.0" y="322.4" width="61.0" height="89.7" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <rect x="334.3" y="328.7" width="50.4" height="77.1" fill="none" stroke="#CCC" stroke-width="0.5" rx="1"/>
+    <circle cx="337.3" cy="353.79499999999996" r="2" fill="#999" stroke="none"/>
+    <text x="390.0" y="412.0" text-anchor="end" font-size="7" fill="#aaa" font-family="Arial, Helvetica, sans-serif">base_3</text>
+    </g>
+  
+    <g id="cab-base_4" class="cabinet tappable" data-section-id="base_4"
+       data-group-id="" style="cursor: pointer;">
+      
+      <rect x="394.0" y="278.0" width="60.0" height="138.0"
+            fill="#FAFAF0" fill-opacity="0.7" stroke="#1565C0"
+            stroke-width="1.5"
+            stroke-dasharray="none"/>
+      <rect x="398.0" y="281.0" width="52.0" height="132.0" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <rect x="402.4" y="286.4" width="43.2" height="121.2" fill="none" stroke="#CCC" stroke-width="0.5" rx="1"/>
+    <circle cx="442.6" cy="327.2" r="2" fill="#999" stroke="none"/>
+    <text x="450.0" y="412.0" text-anchor="end" font-size="7" fill="#aaa" font-family="Arial, Helvetica, sans-serif">base_4</text>
+    </g>
+  
+  </g>
+
+  <!-- ===== APPLIANCE OPENINGS ===== -->
+  <g id="appliances">
+  
+    <g id="cab-base_5" class="appliance" data-section-id="base_5">
+      <rect x="454.0" y="278.0" width="120.0" height="138.0"
+            fill="#E8E8E8" stroke="#333333" stroke-width="1"/>
+      <line x1="457.0" y1="281.0" x2="571.0" y2="413.0" stroke="#999" stroke-width="0.5"/>
+    <line x1="571.0" y1="281.0" x2="457.0" y2="413.0" stroke="#999" stroke-width="0.5"/>
+    <text x="514.0" y="347.0" text-anchor="middle" dominant-baseline="middle" font-size="12" font-weight="bold" fill="#666" font-family="Arial, Helvetica, sans-serif">FRIDGE</text>
+    </g>
+  
+  </g>
+
+  <!-- ===== WALL CABINETS ===== -->
+  <g id="wall-cabinets">
+  
+    <g id="cab-wall_1" class="cabinet tappable" data-section-id="wall_1"
+       data-group-id="" style="cursor: pointer;">
+      
+      
+      <rect x="94.0" y="80.0" width="168.0" height="120.0"
+            fill="#FAFAF0" fill-opacity="0.7" stroke="#1565C0"
+            stroke-width="1.5"
+            stroke-dasharray="none"/>
+      <rect x="98.0" y="83.0" width="79.0" height="114.0" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <rect x="105.1" y="91.1" width="64.8" height="97.8" fill="none" stroke="#CCC" stroke-width="0.5" rx="1"/>
+    <circle cx="166.9" cy="122.9" r="2" fill="#999" stroke="none"/>
+    <rect x="179.0" y="83.0" width="79.0" height="114.0" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <rect x="186.1" y="91.1" width="64.8" height="97.8" fill="none" stroke="#CCC" stroke-width="0.5" rx="1"/>
+    <circle cx="189.1" cy="122.9" r="2" fill="#999" stroke="none"/>
+    <text x="258.0" y="196.0" text-anchor="end" font-size="7" fill="#aaa" font-family="Arial, Helvetica, sans-serif">wall_1</text>
+      
+    </g>
+  
+    <g id="cab-wall_2" class="cabinet tappable" data-section-id="wall_2"
+       data-group-id="" style="cursor: pointer;">
+      
+      
+      <rect x="262.0" y="80.0" width="132.0" height="120.0"
+            fill="#FAFAF0" fill-opacity="0.7" stroke="#1565C0"
+            stroke-width="1.5"
+            stroke-dasharray="none"/>
+      <rect x="266.0" y="83.0" width="61.0" height="114.0" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <rect x="271.3" y="89.3" width="50.4" height="101.4" fill="none" stroke="#CCC" stroke-width="0.5" rx="1"/>
+    <circle cx="318.7" cy="122.9" r="2" fill="#999" stroke="none"/>
+    <rect x="329.0" y="83.0" width="61.0" height="114.0" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <rect x="334.3" y="89.3" width="50.4" height="101.4" fill="none" stroke="#CCC" stroke-width="0.5" rx="1"/>
+    <circle cx="337.3" cy="122.9" r="2" fill="#999" stroke="none"/>
+    <text x="390.0" y="196.0" text-anchor="end" font-size="7" fill="#aaa" font-family="Arial, Helvetica, sans-serif">wall_2</text>
+      
+    </g>
+  
+    <g id="cab-wall_gap_1" class="cabinet tappable" data-section-id="wall_gap_1"
+       data-group-id="" style="cursor: pointer;">
+      
+      <!-- Wall gap: dashed outline only, no fill -->
+      <rect x="262.0" y="176.0" width="132.0" height="24.0"
+            fill="none" stroke="#ccc" stroke-width="1"
+            stroke-dasharray="4,4"/>
+      <text x="328.0" y="188.0"
+            text-anchor="middle" dominant-baseline="middle"
+            font-size="12" fill="#999" font-family="Arial, Helvetica, sans-serif">HOOD</text>
+      
+    </g>
+  
+    <g id="cab-wall_3" class="cabinet tappable" data-section-id="wall_3"
+       data-group-id="" style="cursor: pointer;">
+      
+      
+      <rect x="262.0" y="80.0" width="168.0" height="120.0"
+            fill="#FAFAF0" fill-opacity="0.7" stroke="#1565C0"
+            stroke-width="1.5"
+            stroke-dasharray="none"/>
+      <rect x="266.0" y="83.0" width="79.0" height="114.0" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <rect x="273.1" y="91.1" width="64.8" height="97.8" fill="none" stroke="#CCC" stroke-width="0.5" rx="1"/>
+    <circle cx="334.9" cy="122.9" r="2" fill="#999" stroke="none"/>
+    <rect x="347.0" y="83.0" width="79.0" height="114.0" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <rect x="354.1" y="91.1" width="64.8" height="97.8" fill="none" stroke="#CCC" stroke-width="0.5" rx="1"/>
+    <circle cx="357.1" cy="122.9" r="2" fill="#999" stroke="none"/>
+    <text x="426.0" y="196.0" text-anchor="end" font-size="7" fill="#aaa" font-family="Arial, Helvetica, sans-serif">wall_3</text>
+      
+    </g>
+  
+    <g id="cab-wall_4" class="cabinet tappable" data-section-id="wall_4"
+       data-group-id="" style="cursor: pointer;">
+      
+      
+      <rect x="394.0" y="80.0" width="60.0" height="120.0"
+            fill="#FAFAF0" fill-opacity="0.7" stroke="#1565C0"
+            stroke-width="1.5"
+            stroke-dasharray="none"/>
+      <rect x="398.0" y="83.0" width="52.0" height="114.0" fill="none" stroke="#AAA" stroke-width="0.5" rx="1"/>
+    <rect x="402.4" y="88.4" width="43.2" height="103.2" fill="none" stroke="#CCC" stroke-width="0.5" rx="1"/>
+    <circle cx="442.6" cy="122.9" r="2" fill="#999" stroke="none"/>
+    <text x="450.0" y="196.0" text-anchor="end" font-size="7" fill="#aaa" font-family="Arial, Helvetica, sans-serif">wall_4</text>
+      
+    </g>
+  
+    <g id="cab-wall_gap_2" class="cabinet tappable" data-section-id="wall_gap_2"
+       data-group-id="" style="cursor: pointer;">
+      
+      <!-- Wall gap: dashed outline only, no fill -->
+      <rect x="454.0" y="152.0" width="120.0" height="48.0"
+            fill="none" stroke="#ccc" stroke-width="1"
+            stroke-dasharray="4,4"/>
+      <text x="514.0" y="176.0"
+            text-anchor="middle" dominant-baseline="middle"
+            font-size="12" fill="#999" font-family="Arial, Helvetica, sans-serif">HOOD</text>
+      
+    </g>
+  
+  </g>
+
+  <!-- ===== FILLERS ===== -->
+  <g id="fillers">
+  
+    <rect x="90" y="278.0" width="4.0" height="138.0"
+          fill="url(#filler-hatch)" stroke="#E65100" stroke-width="0.5"
+          stroke-dasharray="3,2"/>
+    <text x="92.0" y="347.0"
+          text-anchor="middle" dominant-baseline="middle"
+          font-size="7" fill="#E65100" transform="rotate(-90, 92.0, 347.0)">
+      1.00"</text>
+  
+    <rect x="574.0" y="278.0" width="4.0" height="138.0"
+          fill="url(#filler-hatch)" stroke="#E65100" stroke-width="0.5"
+          stroke-dasharray="3,2"/>
+    <text x="576.0" y="347.0"
+          text-anchor="middle" dominant-baseline="middle"
+          font-size="7" fill="#E65100" transform="rotate(-90, 576.0, 347.0)">
+      1.00"</text>
+  
+  </g>
+
+  <!-- ===== WIDTH DIMENSIONS ===== -->
+  <g id="dimensions-width">
+  
+    <!-- Extension lines -->
+    <line x1="94.0" y1="421.0" x2="94.0" y2="439.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="166.0" y1="421.0" x2="166.0" y2="439.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <!-- Dimension line with arrows -->
+    <line x1="95.0" y1="436.0" x2="165.0" y2="436.0"
+          stroke="#1565C0" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <!-- Label -->
+    <text x="130.0" y="432.0" text-anchor="middle"
+          font-size="11" fill="#1565C0"
+          font-weight="normal">18"</text>
+  
+    <!-- Extension lines -->
+    <line x1="166.0" y1="421.0" x2="166.0" y2="439.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="262.0" y1="421.0" x2="262.0" y2="439.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <!-- Dimension line with arrows -->
+    <line x1="167.0" y1="436.0" x2="261.0" y2="436.0"
+          stroke="#1565C0" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <!-- Label -->
+    <text x="214.0" y="432.0" text-anchor="middle"
+          font-size="11" fill="#1565C0"
+          font-weight="normal">24"</text>
+  
+    <!-- Extension lines -->
+    <line x1="262.0" y1="421.0" x2="262.0" y2="439.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="394.0" y1="421.0" x2="394.0" y2="439.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <!-- Dimension line with arrows -->
+    <line x1="263.0" y1="436.0" x2="393.0" y2="436.0"
+          stroke="#1565C0" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <!-- Label -->
+    <text x="328.0" y="432.0" text-anchor="middle"
+          font-size="11" fill="#1565C0"
+          font-weight="normal">33"</text>
+  
+    <!-- Extension lines -->
+    <line x1="394.0" y1="421.0" x2="394.0" y2="439.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="454.0" y1="421.0" x2="454.0" y2="439.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <!-- Dimension line with arrows -->
+    <line x1="395.0" y1="436.0" x2="453.0" y2="436.0"
+          stroke="#1565C0" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <!-- Label -->
+    <text x="424.0" y="432.0" text-anchor="middle"
+          font-size="11" fill="#1565C0"
+          font-weight="normal">15"</text>
+  
+    <!-- Extension lines -->
+    <line x1="454.0" y1="421.0" x2="454.0" y2="439.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="574.0" y1="421.0" x2="574.0" y2="439.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <!-- Dimension line with arrows -->
+    <line x1="455.0" y1="436.0" x2="573.0" y2="436.0"
+          stroke="#333333" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <!-- Label -->
+    <text x="514.0" y="432.0" text-anchor="middle"
+          font-size="11" fill="#333333"
+          font-weight="normal">30"</text>
+  
+    <!-- Extension lines -->
+    <line x1="94.0" y1="65" x2="94.0" y2="83"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="262.0" y1="65" x2="262.0" y2="83"
+          stroke="#BBB" stroke-width="0.5"/>
+    <!-- Dimension line with arrows -->
+    <line x1="95.0" y1="80" x2="261.0" y2="80"
+          stroke="#1565C0" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <!-- Label -->
+    <text x="178.0" y="76" text-anchor="middle"
+          font-size="11" fill="#1565C0"
+          font-weight="normal">42"</text>
+  
+    <!-- Extension lines -->
+    <line x1="262.0" y1="65" x2="262.0" y2="83"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="394.0" y1="65" x2="394.0" y2="83"
+          stroke="#BBB" stroke-width="0.5"/>
+    <!-- Dimension line with arrows -->
+    <line x1="263.0" y1="80" x2="393.0" y2="80"
+          stroke="#1565C0" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <!-- Label -->
+    <text x="328.0" y="76" text-anchor="middle"
+          font-size="11" fill="#1565C0"
+          font-weight="normal">33"</text>
+  
+    <!-- Extension lines -->
+    <line x1="262.0" y1="153.0" x2="262.0" y2="171.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="394.0" y1="153.0" x2="394.0" y2="171.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <!-- Dimension line with arrows -->
+    <line x1="263.0" y1="168.0" x2="393.0" y2="168.0"
+          stroke="#E65100" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <!-- Label -->
+    <text x="328.0" y="164.0" text-anchor="middle"
+          font-size="11" fill="#E65100"
+          font-weight="normal">33"</text>
+  
+    <!-- Extension lines -->
+    <line x1="262.0" y1="65" x2="262.0" y2="83"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="430.0" y1="65" x2="430.0" y2="83"
+          stroke="#BBB" stroke-width="0.5"/>
+    <!-- Dimension line with arrows -->
+    <line x1="263.0" y1="80" x2="429.0" y2="80"
+          stroke="#1565C0" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <!-- Label -->
+    <text x="346.0" y="76" text-anchor="middle"
+          font-size="11" fill="#1565C0"
+          font-weight="normal">42"</text>
+  
+    <!-- Extension lines -->
+    <line x1="394.0" y1="65" x2="394.0" y2="83"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="454.0" y1="65" x2="454.0" y2="83"
+          stroke="#BBB" stroke-width="0.5"/>
+    <!-- Dimension line with arrows -->
+    <line x1="395.0" y1="80" x2="453.0" y2="80"
+          stroke="#1565C0" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <!-- Label -->
+    <text x="424.0" y="76" text-anchor="middle"
+          font-size="11" fill="#1565C0"
+          font-weight="normal">15"</text>
+  
+    <!-- Extension lines -->
+    <line x1="454.0" y1="129.0" x2="454.0" y2="147.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="574.0" y1="129.0" x2="574.0" y2="147.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <!-- Dimension line with arrows -->
+    <line x1="455.0" y1="144.0" x2="573.0" y2="144.0"
+          stroke="#E65100" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <!-- Label -->
+    <text x="514.0" y="140.0" text-anchor="middle"
+          font-size="11" fill="#E65100"
+          font-weight="normal">30"</text>
+  
+  </g>
+
+  <!-- ===== TOTAL RUN DIMENSION ===== -->
+  
+  <g id="total-run">
+    <line x1="90" y1="444.0"
+          x2="90" y2="467.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="578.0" y1="444.0"
+          x2="578.0" y2="467.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="91" y1="464.0"
+          x2="577.0" y2="464.0"
+          stroke="#2E7D32" stroke-width="1.2"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <text x="334.0" y="459.0"
+          text-anchor="middle" font-size="12" font-weight="bold"
+          fill="#2E7D32">122.0" TOTAL RUN</text>
+  </g>
+  
+
+  <!-- ===== HEIGHT DIMENSIONS (left side) ===== -->
+  <g id="dimensions-height">
+  
+    <line x1="72" y1="80.0" x2="78" y2="80.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="72" y1="200.0" x2="78" y2="200.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="75" y1="81.0" x2="75" y2="199.0"
+          stroke="#1565C0" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <text x="70" y="140.0"
+          text-anchor="end" dominant-baseline="middle"
+          font-size="10" fill="#1565C0">30"</text>
+  
+    <line x1="32" y1="200.0" x2="38" y2="200.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="32" y1="272.0" x2="38" y2="272.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="35" y1="201.0" x2="35" y2="271.0"
+          stroke="#1565C0" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <text x="30" y="236.0"
+          text-anchor="end" dominant-baseline="middle"
+          font-size="10" fill="#1565C0">18"</text>
+  
+    <line x1="52" y1="272.0" x2="58" y2="272.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="52" y1="416.0" x2="58" y2="416.0"
+          stroke="#BBB" stroke-width="0.5"/>
+    <line x1="55" y1="273.0" x2="55" y2="415.0"
+          stroke="#1565C0" stroke-width="0.8"
+          marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+    <text x="50" y="344.0"
+          text-anchor="end" dominant-baseline="middle"
+          font-size="10" fill="#1565C0">36"</text>
+  
+  </g>
+
+  <!-- ===== LEGEND ===== -->
+  <g id="legend" transform="translate(398.0, 481.0)">
+    <rect x="0" y="0" width="210" height="50" fill="white" stroke="#DDD" stroke-width="1" rx="4"/>
+
+    <line x1="10" y1="12" x2="30" y2="12" stroke="#2E7D32" stroke-width="2"/>
+    <text x="35" y="15" font-size="9" fill="#333">Measured (tape)</text>
+
+    <line x1="10" y1="27" x2="30" y2="27" stroke="#1565C0" stroke-width="1.5"/>
+    <text x="35" y="30" font-size="9" fill="#333">Solved (standard size)</text>
+
+    <line x1="110" y1="12" x2="130" y2="12" stroke="#E65100" stroke-width="1.5"
+          stroke-dasharray="5,3"/>
+    <text x="135" y="15" font-size="9" fill="#333">Estimated</text>
+
+    <rect x="110" y="22" width="20" height="10" fill="url(#filler-hatch)" stroke="#CCC" stroke-width="0.5"/>
+    <text x="135" y="30" font-size="9" fill="#333">Filler</text>
+
+    <text x="10" y="44" font-size="8" fill="#999">Tap any cabinet to input measurement</text>
+  </g>
+
+</svg>
