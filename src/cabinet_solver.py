@@ -91,13 +91,15 @@ class SolverResult:
 class SectionEstimate:
     """A cabinet section with its photo-derived proportion."""
     section_id: str
-    cabinet_type: str              # "base", "wall", "tall", "appliance_opening"
+    cabinet_type: str              # "base", "wall", "wall_gap", "tall", "appliance_opening"
     proportion: float              # fraction of total run (0-1)
     raw_pixel_width: float         # raw pixel width from photo
     is_appliance: bool = False
     appliance_type: Optional[str] = None
     filler_detected_left: bool = False
     filler_detected_right: bool = False
+    above_base_ids: Optional[List[str]] = None
+    estimated_height: Optional[float] = None  # individual height (for wall cabinets)
 
 
 # ===== SOLVER =====
@@ -446,6 +448,84 @@ class CabinetWidthSolver:
             ))
 
         return fillers
+
+    def solve_wall_cabinets(
+        self,
+        wall_sections: List[SectionEstimate],
+        base_solver_result: SolverResult,
+        base_sections: List[SectionEstimate],
+    ) -> SolverResult:
+        """
+        Solve wall cabinet widths by aligning them to the base cabinets below.
+
+        Wall cabinets are positioned above specific base cabinets (via above_base_ids).
+        Their widths are constrained by the base cabinets they sit above and snapped
+        to standard wall widths.
+        """
+        # Build a lookup: base_id -> solved_width
+        base_width_lookup = {}
+        for cw in base_solver_result.cabinet_widths:
+            base_width_lookup[cw.section_id] = cw.standard_width
+
+        solved_widths = []
+        for ws in wall_sections:
+            if ws.cabinet_type == "wall_gap":
+                # Gap width = sum of base cabinets below
+                gap_width = 0
+                if ws.above_base_ids:
+                    gap_width = sum(base_width_lookup.get(bid, 0) for bid in ws.above_base_ids)
+                if gap_width <= 0:
+                    gap_width = ws.raw_pixel_width or 30  # fallback
+                solved_widths.append(CabinetWidth(
+                    section_id=ws.section_id,
+                    standard_width=int(round(gap_width)),
+                    confidence=0.8,
+                    source="gap",
+                    alternatives=[],
+                    is_appliance=False,
+                ))
+            else:
+                # Wall cabinet: snap to nearest standard wall width
+                # Use the span of base cabinets below as a guide
+                span_width = 0
+                if ws.above_base_ids:
+                    span_width = sum(base_width_lookup.get(bid, 0) for bid in ws.above_base_ids)
+
+                # Estimate: use span if available, otherwise proportion-based
+                if span_width > 0:
+                    est_width = span_width
+                elif ws.raw_pixel_width > 0:
+                    est_width = ws.raw_pixel_width
+                else:
+                    est_width = 24  # fallback
+
+                # Snap to nearest standard wall width
+                nearest = self._nearest_standard(est_width, cabinet_type="wall")
+                solved_widths.append(CabinetWidth(
+                    section_id=ws.section_id,
+                    standard_width=nearest,
+                    confidence=0.6 if not ws.above_base_ids else 0.75,
+                    source="solved",
+                    alternatives=self._get_alternatives(est_width, cabinet_type="wall"),
+                    is_appliance=False,
+                ))
+
+        return SolverResult(
+            cabinet_widths=solved_widths,
+            fillers=[],
+            total_matches=True,
+            residual=0,
+            confidence=0.7,
+            needs_user_input=None,
+            disambiguation_reason=None,
+        )
+
+    def _get_alternatives(self, raw_width: float, cabinet_type: str = "base") -> List[int]:
+        """Get 2 nearest standard alternatives to a raw width."""
+        standards = STANDARD_WALL_WIDTHS if cabinet_type == "wall" else STANDARD_BASE_WIDTHS
+        diffs = [(abs(raw_width - s), s) for s in standards]
+        diffs.sort()
+        return [s for _, s in diffs[1:3]]
 
 
 # ===== GROUPING =====

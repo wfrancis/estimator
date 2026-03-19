@@ -110,7 +110,7 @@ class KitchenStandards:
 class CabinetSection(BaseModel):
     """A single cabinet section identified in the photo."""
     id: str = Field(description="Unique identifier like 'upper_left_1' or 'base_sink'")
-    cabinet_type: str = Field(description="'base', 'wall', 'tall', 'corner', 'appliance_opening'")
+    cabinet_type: str = Field(description="'base', 'wall', 'wall_gap', 'tall', 'corner', 'appliance_opening'")
     position: str = Field(description="Description of where it is: 'left of sink', 'above range', etc.")
     door_count: int = Field(ge=0, description="Number of doors visible")
     drawer_count: int = Field(ge=0, description="Number of drawers visible")
@@ -127,6 +127,7 @@ class CabinetSection(BaseModel):
     filler_detected_left: bool = Field(default=False, description="Filler strip detected on left side")
     filler_detected_right: bool = Field(default=False, description="Filler strip detected on right side")
     same_size_as: Optional[List[str]] = Field(None, description="IDs of other cabinets that appear to be the same width")
+    above_base_ids: Optional[List[str]] = Field(None, description="Base section IDs this wall element sits above (for vertical alignment)")
 
 
 class ReferenceObject(BaseModel):
@@ -181,32 +182,45 @@ class MeasurementReport(BaseModel):
 
 CABINET_DETECTION_PROMPT = """You are a cabinet measurement assistant helping a cabinet maker on-site.
 
-Analyze this kitchen photo and identify EVERY cabinet section, appliance opening, and reference object.
+Analyze this kitchen photo and identify EVERY cabinet section, appliance opening, gap, and reference object.
 The person on-site will only need to measure 1-2 things — the AI will figure out the rest.
 
 CRITICAL TASKS:
 1. Identify every cabinet, appliance opening, and reference object
-2. Estimate PROPORTIONS — what fraction of the total wall run each cabinet occupies
+2. Estimate PROPORTIONS — what fraction of the total wall run each section occupies
 3. Detect FILLER STRIPS — gaps between cabinets and walls, or between adjacent cabinets
 4. Group SAME-SIZE cabinets — which cabinets appear to be the same width?
 5. Identify APPLIANCE TYPES — what specific appliance fits each opening?
+6. Identify GAPS in the wall cabinet row — range hoods, vent hoods, open space above the fridge,
+   or any area where there is NO wall cabinet. Report each gap as a section with
+   cabinet_type "wall_gap" and describe what's there (e.g., "range hood gap", "open above fridge").
+7. Report INDIVIDUAL WALL CABINET HEIGHTS — not all wall cabinets are the same height.
+   Cabinets above a range hood may be 12-18", standard wall cabinets are 30-42",
+   cabinets above a fridge may be 12-24". Use estimated_height accurately for each.
 
-For each cabinet section provide:
-- id: unique ID in LEFT-TO-RIGHT order (e.g., "base_1", "base_2", "base_sink", "wall_1")
-- cabinet_type: base, wall, tall, corner, appliance_opening
+IMPORTANT: List ALL sections in LEFT-TO-RIGHT order. First list ALL base-level sections (base cabinets
++ appliance openings like dishwasher, range, fridge), then ALL wall-level sections (wall cabinets +
+wall_gap sections). Base sections and wall sections have SEPARATE proportion systems — base proportions
+sum to ~1.0, wall proportions sum to ~1.0.
+
+For each section provide:
+- id: unique ID (e.g., "base_1", "base_2", "wall_1", "wall_gap_1")
+- cabinet_type: base, wall, wall_gap, tall, corner, appliance_opening
 - position: description relative to other items
-- door_count, drawer_count: what's visible
+- door_count, drawer_count: what's visible (0 for gaps and appliances)
 - estimated_width, estimated_height: your best guess in inches
 - confidence: 0-1 (be conservative)
-- pixel_proportion: fraction of total wall run this cabinet occupies (all proportions should sum to ~1.0 for cabinets only, excluding fillers)
+- pixel_proportion: fraction of total run this section occupies (base proportions sum to ~1.0, wall proportions sum to ~1.0 separately)
 - is_appliance: true if this is an appliance opening (fridge, range, dishwasher)
 - appliance_type: specific type if appliance (use keys: refrigerator_30, refrigerator_33, refrigerator_36, range_30, range_36, dishwasher, microwave_otr, sink_single_bowl, sink_double_bowl)
-- filler_detected_left: true if there's a visible filler strip to the left
-- filler_detected_right: true if there's a visible filler strip to the right
-- same_size_as: list of other section IDs that appear to be the same width (for grouping)
-- needs_tape_measure: false for appliances, true for cabinets (but solver may make this unnecessary)
-- measurement_priority: "required" for ambiguous sizes, "verify" for standard sizes, "optional" for appliances
+- filler_detected_left, filler_detected_right: true if filler strip detected
+- same_size_as: list of other section IDs that appear to be the same width
+- needs_tape_measure: false for appliances and gaps, true for cabinets
+- measurement_priority: "required" for ambiguous, "verify" for standard, "optional" for appliances/gaps
 - notes: any special observations
+- above_base_ids: (WALL AND WALL_GAP SECTIONS ONLY) list of base section IDs this wall element
+  sits directly above. E.g., a wall cabinet above the sink base would be ["base_3"]. A range hood
+  gap above the range would be ["base_range"]. This is CRITICAL for vertical alignment in the drawing.
 
 STANDARD CABINET WIDTHS (factory sizes): 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 42, 48 inches.
 All cabinets MUST be one of these widths. Estimate which standard width each cabinet most likely is.
@@ -218,7 +232,7 @@ Return your analysis as JSON matching this structure:
   "cabinet_sections": [
     {{
       "id": "string",
-      "cabinet_type": "base|wall|tall|corner|appliance_opening",
+      "cabinet_type": "base|wall|wall_gap|tall|corner|appliance_opening",
       "position": "string",
       "door_count": 0,
       "drawer_count": 0,
@@ -233,7 +247,8 @@ Return your analysis as JSON matching this structure:
       "same_size_as": [] or ["id1", "id2"],
       "needs_tape_measure": true,
       "measurement_priority": "required|verify|optional",
-      "notes": "string"
+      "notes": "string",
+      "above_base_ids": null or ["base_1", "base_2"]
     }}
   ],
   "reference_objects": [

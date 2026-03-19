@@ -1,15 +1,17 @@
 import { useState } from 'react';
-import type { SolveResponse } from '../types';
+import type { SolveResponse, SceneData } from '../types';
 import ElevationSVG from './ElevationSVG';
+import Kitchen3D from './Kitchen3D';
 
 interface SolvedViewProps {
   data: SolveResponse;
+  sceneData?: SceneData | null;
   onTapMeasure: (sectionId: string, value: number) => void;
   onConfirm: () => void;
   loading: boolean;
 }
 
-export default function SolvedView({ data, onTapMeasure, onConfirm, loading }: SolvedViewProps) {
+export default function SolvedView({ data, sceneData, onTapMeasure, onConfirm, loading }: SolvedViewProps) {
   const [tapModal, setTapModal] = useState<string | null>(null);
   const [tapValue, setTapValue] = useState('');
 
@@ -76,9 +78,24 @@ export default function SolvedView({ data, onTapMeasure, onConfirm, loading }: S
         </div>
       )}
 
-      {/* SVG Elevation (solved state — tappable) */}
-      <ElevationSVG svg={svg} onTapCabinet={handleTapCabinet} />
-      <p className="text-xs text-gray-400 text-center">Tap any cabinet to enter a measured width</p>
+      {/* 3D Kitchen Viewer (or SVG fallback) */}
+      {sceneData ? (
+        <div className="relative">
+          <Kitchen3D
+            data={sceneData}
+            onCabinetClick={handleTapCabinet}
+            height="450px"
+          />
+          <p className="text-xs text-gray-400 text-center mt-1">
+            Drag to rotate, scroll to zoom. Click a cabinet to enter a measured width.
+          </p>
+        </div>
+      ) : (
+        <>
+          <ElevationSVG svg={svg} onTapCabinet={handleTapCabinet} />
+          <p className="text-xs text-gray-400 text-center">Tap any cabinet to enter a measured width</p>
+        </>
+      )}
 
       {/* Solved Widths Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

@@ -152,6 +152,7 @@ def layout_from_solver(
     sections: List[SectionEstimate],
     total_run: float,
     wall_cabinet_sections: Optional[List[SectionEstimate]] = None,
+    wall_solver_result: Optional[SolverResult] = None,
     groups: Optional[List[CabinetGroup]] = None,
     title: str = "Cabinet Elevation Drawing",
 ) -> ElevationLayout:
@@ -314,38 +315,91 @@ def layout_from_solver(
         orientation="horizontal",
     )
 
-    # Place wall cabinets (aligned above base cabinets)
+    # Place wall cabinets (aligned above base cabinets using above_base_ids)
     wall_cabs = []
     wall_dims = []
+
+    # Build wall solver lookups
+    wall_width_lookup = {}
+    wall_source_lookup = {}
+    wall_conf_lookup = {}
+    if wall_solver_result:
+        for cw in wall_solver_result.cabinet_widths:
+            wall_width_lookup[cw.section_id] = cw.standard_width
+            wall_source_lookup[cw.section_id] = cw.source
+            wall_conf_lookup[cw.section_id] = cw.confidence
+
+    # Build base cabinet position lookup for alignment
+    base_pos_lookup = {}
+    for bc in base_cabinets + appliance_openings:
+        base_pos_lookup[bc.section_id] = (bc.x, bc.width_px)
+
     if wall_cabinet_sections:
-        wx = cfg.MARGIN_LEFT
+        wx_fallback = cfg.MARGIN_LEFT  # fallback if no above_base_ids
         for section in wall_cabinet_sections:
-            w_inches = width_lookup.get(section.section_id, section.proportion * total_run)
-            w_px = w_inches * scale
-            w_source = source_lookup.get(section.section_id, "estimated")
-            w_conf = confidence_lookup.get(section.section_id, 0.5)
+            is_gap = section.cabinet_type == "wall_gap"
+
+            # Get width: from wall solver, then width_lookup, then proportion
+            w_inches = wall_width_lookup.get(
+                section.section_id,
+                width_lookup.get(section.section_id, section.proportion * total_run)
+            )
+            w_source = wall_source_lookup.get(
+                section.section_id,
+                source_lookup.get(section.section_id, "estimated")
+            )
+            w_conf = wall_conf_lookup.get(
+                section.section_id,
+                confidence_lookup.get(section.section_id, 0.5)
+            )
+
+            # Get individual height (defaults to standard wall cabinet height)
+            sec_height = section.estimated_height or cfg.WALL_CABINET_HEIGHT
+            sec_height_px = sec_height * scale
+
+            # Position: align to base cabinets below if above_base_ids available
+            if section.above_base_ids:
+                base_xs = [base_pos_lookup[bid][0] for bid in section.above_base_ids if bid in base_pos_lookup]
+                base_rights = [base_pos_lookup[bid][0] + base_pos_lookup[bid][1] for bid in section.above_base_ids if bid in base_pos_lookup]
+                if base_xs and base_rights:
+                    wx = min(base_xs)
+                    span_px = max(base_rights) - wx
+                    w_px = span_px  # match span of base cabinets below
+                    w_inches = w_px / scale
+                else:
+                    wx = wx_fallback
+                    w_px = w_inches * scale
+            else:
+                wx = wx_fallback
+                w_px = w_inches * scale
+
+            # Wall cabinets bottom-align to backsplash_top, shorter ones float up
+            wall_y = backsplash_top - sec_height_px
 
             wall_cabs.append(PositionedCabinet(
                 section_id=section.section_id,
-                cabinet_type="wall",
-                x=wx, y=wall_top,
-                width_px=w_px, height_px=wall_height,
+                cabinet_type="wall_gap" if is_gap else "wall",
+                x=wx, y=wall_y,
+                width_px=w_px, height_px=sec_height_px,
                 real_width=w_inches,
-                real_height=cfg.WALL_CABINET_HEIGHT,
-                source=w_source, confidence=w_conf,
-                door_count=0, drawer_count=0,
-                label=section.section_id,
+                real_height=sec_height,
+                source="gap" if is_gap else w_source,
+                confidence=w_conf,
+                door_count=0 if is_gap else section.raw_pixel_width,  # approximate
+                drawer_count=0,
+                label="HOOD" if is_gap else section.section_id,
                 group_id=group_lookup.get(section.section_id),
             ))
 
             wall_dims.append(DimensionLine(
-                x1=wx, y1=wall_top - 15,
-                x2=wx + w_px, y2=wall_top - 15,
+                x1=wx, y1=wall_y - 8,
+                x2=wx + w_px, y2=wall_y - 8,
                 label=f'{w_inches:.0f}"' if w_inches == int(w_inches) else f'{w_inches:.1f}"',
-                source=w_source, orientation="horizontal", confidence=w_conf,
+                source="gap" if is_gap else w_source,
+                orientation="horizontal", confidence=w_conf,
             ))
 
-            wx += w_px
+            wx_fallback = wx + w_px  # advance fallback cursor
 
     # Height dimensions (left side)
     height_dims = []
@@ -789,6 +843,7 @@ def generate_elevation_svg(
     sections: List[SectionEstimate],
     total_run: float,
     wall_sections: Optional[List[SectionEstimate]] = None,
+    wall_solver_result: Optional[SolverResult] = None,
     groups: Optional[List[CabinetGroup]] = None,
     title: str = "Cabinet Elevation Drawing",
 ) -> str:
@@ -802,6 +857,7 @@ def generate_elevation_svg(
         sections=sections,
         total_run=total_run,
         wall_cabinet_sections=wall_sections,
+        wall_solver_result=wall_solver_result,
         groups=groups,
         title=title,
     )

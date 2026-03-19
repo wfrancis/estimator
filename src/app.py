@@ -250,26 +250,28 @@ def _analysis_to_sections(analysis: PhotoAnalysisResult) -> List[SectionEstimate
 
 
 def _analysis_to_wall_sections(analysis: PhotoAnalysisResult) -> List[SectionEstimate]:
-    """Extract wall cabinet sections for the drawing."""
+    """Extract wall cabinet and wall_gap sections for the drawing."""
     total_est = sum(
         s.estimated_width for s in analysis.cabinet_sections
-        if s.estimated_width and s.cabinet_type == "wall"
+        if s.estimated_width and s.cabinet_type in ("wall", "wall_gap")
     )
     if total_est <= 0:
         total_est = 1.0
 
     sections = []
     for s in analysis.cabinet_sections:
-        if s.cabinet_type != "wall":
+        if s.cabinet_type not in ("wall", "wall_gap"):
             continue
         prop = s.pixel_proportion if s.pixel_proportion else (
             (s.estimated_width / total_est) if s.estimated_width else 0.1
         )
         sections.append(SectionEstimate(
             section_id=s.id,
-            cabinet_type="wall",
+            cabinet_type=s.cabinet_type,
             proportion=prop,
             raw_pixel_width=s.estimated_width or 0,
+            above_base_ids=s.above_base_ids,
+            estimated_height=s.estimated_height,
         ))
     return sections
 
@@ -304,7 +306,7 @@ async def solve_cabinet_widths(session_id: str, request: SolveRequest):
     # Group same-size cabinets
     groups = group_by_proportions(base_sections)
 
-    # Solve
+    # Solve base cabinets
     solver = CabinetWidthSolver()
     result = solver.solve(
         total_run=request.total_run,
@@ -313,18 +315,29 @@ async def solve_cabinet_widths(session_id: str, request: SolveRequest):
         known_measurements=request.additional_measurements,
     )
 
+    # Solve wall cabinets (aligned to base)
+    wall_solver_result = None
+    if wall_sections:
+        wall_solver_result = solver.solve_wall_cabinets(
+            wall_sections=wall_sections,
+            base_solver_result=result,
+            base_sections=base_sections,
+        )
+
     # Generate SVG elevation drawing
     svg = generate_elevation_svg(
         solver_result=result,
         sections=base_sections,
         total_run=request.total_run,
         wall_sections=wall_sections if wall_sections else None,
+        wall_solver_result=wall_solver_result,
         groups=groups,
         title="Cabinet Elevation — Solved",
     )
 
     # Store solver result in session
     session["solver_result"] = result
+    session["wall_solver_result"] = wall_solver_result
     session["solve_request"] = request
     session["base_sections"] = base_sections
     session["wall_sections"] = wall_sections
@@ -520,6 +533,137 @@ async def confirm_measurements(session_id: str):
         )
 
     return {"session_id": session_id, "report": report}
+
+
+@app.get("/cabinet/{session_id}/scene")
+async def get_scene_data(session_id: str):
+    """
+    Get 3D scene data for the Three.js viewer.
+    Returns all cabinet positions, dimensions, and metadata needed to render a 3D kitchen.
+    """
+    if session_id not in cabinet_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = cabinet_sessions[session_id]
+    analysis = session["analysis"]
+    solver_result = session.get("solver_result")
+    wall_solver_result = session.get("wall_solver_result")
+    total_run = session["solve_request"].total_run if "solve_request" in session else None
+
+    # Build base width lookup
+    base_width_lookup = {}
+    if solver_result:
+        for cw in solver_result.cabinet_widths:
+            base_width_lookup[cw.section_id] = {
+                "width": cw.standard_width,
+                "confidence": cw.confidence,
+                "source": cw.source,
+            }
+
+    # Build wall width lookup
+    wall_width_lookup = {}
+    if wall_solver_result:
+        for cw in wall_solver_result.cabinet_widths:
+            wall_width_lookup[cw.section_id] = {
+                "width": cw.standard_width,
+                "confidence": cw.confidence,
+                "source": cw.source,
+            }
+
+    # Position base cabinets left-to-right
+    base_cabinets = []
+    x_cursor = 0.0
+    # Add left filler if present
+    fillers_scene = []
+    if solver_result:
+        for f in solver_result.fillers:
+            if "left" in f.position.lower():
+                fillers_scene.append({"x": x_cursor, "width": f.width, "position": f.position})
+                x_cursor += f.width
+
+    for s in analysis.cabinet_sections:
+        if s.cabinet_type not in ("base", "appliance_opening"):
+            continue
+        w = base_width_lookup.get(s.id, {}).get("width", s.estimated_width or 24)
+        cab = {
+            "id": s.id,
+            "type": s.cabinet_type,
+            "x": x_cursor,
+            "width": w,
+            "depth": 24.0,
+            "height": 34.5,
+            "doors": s.door_count,
+            "drawers": s.drawer_count,
+            "is_appliance": s.is_appliance,
+            "appliance_type": s.appliance_type,
+            "confidence": base_width_lookup.get(s.id, {}).get("confidence", s.confidence),
+            "source": base_width_lookup.get(s.id, {}).get("source", "estimated"),
+        }
+        base_cabinets.append(cab)
+        x_cursor += w
+
+    # Add right filler
+    if solver_result:
+        for f in solver_result.fillers:
+            if "right" in f.position.lower():
+                fillers_scene.append({"x": x_cursor, "width": f.width, "position": f.position})
+
+    # Build base position lookup for wall cabinet alignment
+    base_pos_lookup = {c["id"]: {"x": c["x"], "width": c["width"]} for c in base_cabinets}
+
+    # Position wall cabinets (aligned to base below)
+    wall_cabinets = []
+    for s in analysis.cabinet_sections:
+        if s.cabinet_type not in ("wall", "wall_gap"):
+            continue
+        w = wall_width_lookup.get(s.id, {}).get("width", s.estimated_width or 24)
+        h = s.estimated_height or 30.0
+        is_gap = s.cabinet_type == "wall_gap"
+
+        # Find x position from above_base_ids
+        wx = 0.0
+        if s.above_base_ids:
+            base_xs = [base_pos_lookup[bid]["x"] for bid in s.above_base_ids if bid in base_pos_lookup]
+            if base_xs:
+                wx = min(base_xs)
+                # Width can also be derived from the span of base cabinets
+                right_edges = [
+                    base_pos_lookup[bid]["x"] + base_pos_lookup[bid]["width"]
+                    for bid in s.above_base_ids if bid in base_pos_lookup
+                ]
+                if right_edges:
+                    w = max(right_edges) - wx
+
+        wall_cabinets.append({
+            "id": s.id,
+            "type": s.cabinet_type,
+            "x": wx,
+            "width": w,
+            "depth": 12.0,
+            "height": h,
+            "y_bottom": 54.0,  # 18" above 36" countertop
+            "doors": s.door_count if not is_gap else 0,
+            "drawers": 0,
+            "is_gap": is_gap,
+            "gap_type": "hood" if is_gap and "hood" in (s.notes or "").lower() else ("open" if is_gap else None),
+            "confidence": wall_width_lookup.get(s.id, {}).get("confidence", s.confidence),
+            "source": wall_width_lookup.get(s.id, {}).get("source", "estimated"),
+            "above_base_ids": s.above_base_ids,
+        })
+
+    return {
+        "session_id": session_id,
+        "total_run": total_run,
+        "base_cabinets": base_cabinets,
+        "wall_cabinets": wall_cabinets,
+        "fillers": fillers_scene,
+        "countertop": {
+            "width": total_run or x_cursor,
+            "depth": 25.5,
+            "height": 1.5,
+            "y": 34.5,
+        },
+    }
 
 
 # ===== STATIC FILE SERVING (production: serve built frontend) =====

@@ -1,12 +1,14 @@
-import type { ConfirmResponse } from '../types';
+import type { ConfirmResponse, SceneData } from '../types';
+import Kitchen3D from './Kitchen3D';
 
 interface ConfirmReportProps {
   data: ConfirmResponse;
   svgContent: string | null;
+  sceneData?: SceneData | null;
   onNewMeasurement: () => void;
 }
 
-export default function ConfirmReport({ data, svgContent, onNewMeasurement }: ConfirmReportProps) {
+export default function ConfirmReport({ data, svgContent, sceneData, onNewMeasurement }: ConfirmReportProps) {
   const { report } = data;
 
   const handlePrint = () => window.print();
@@ -30,12 +32,14 @@ export default function ConfirmReport({ data, svgContent, onNewMeasurement }: Co
         </div>
       </div>
 
-      {/* SVG (verified/green state) */}
-      {svgContent && (
+      {/* 3D Kitchen Viewer (or SVG fallback) */}
+      {sceneData ? (
+        <Kitchen3D data={sceneData} height="400px" />
+      ) : svgContent ? (
         <div className="overflow-x-auto bg-white rounded-xl border border-gray-200 p-2 print:border-none">
           <div dangerouslySetInnerHTML={{ __html: svgContent }} />
         </div>
-      )}
+      ) : null}
 
       {/* Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
