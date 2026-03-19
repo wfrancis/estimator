@@ -2,11 +2,13 @@
 import os
 import uuid
 import json
+from pathlib import Path
 from typing import Optional, List, Dict
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from cabinet_measurement_service import (
@@ -28,7 +30,12 @@ app = FastAPI(title="Cabinet Measurement API", version="1.0.0")
 # CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -54,6 +61,15 @@ async def root():
         "version": "1.0.0",
         "description": "AI-powered cabinet measurement from kitchen photos",
     }
+
+
+@app.get("/test-image")
+async def get_test_image():
+    """Serve test image for development."""
+    img_path = Path(__file__).parent / "test_kitchen.jpg"
+    if img_path.exists():
+        return Response(content=img_path.read_bytes(), media_type="image/jpeg")
+    raise HTTPException(status_code=404, detail="No test image")
 
 
 @app.get("/cabinet/guide")
@@ -504,6 +520,13 @@ async def confirm_measurements(session_id: str):
         )
 
     return {"session_id": session_id, "report": report}
+
+
+# ===== STATIC FILE SERVING (production: serve built frontend) =====
+
+_frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if _frontend_dist.is_dir():
+    app.mount("/", StaticFiles(directory=str(_frontend_dist), html=True), name="frontend")
 
 
 if __name__ == "__main__":
