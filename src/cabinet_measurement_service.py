@@ -401,7 +401,8 @@ class CabinetMeasurementAssistant:
         response = await self.client.chat.completions.create(
             model="gpt-5.4",
             max_completion_tokens=4000,
-            temperature=0.1,
+            temperature=0.0,
+            seed=42,
             messages=[
                 {"role": "system", "content": "You are a precise, confident cabinet measurement expert with 20+ years experience. You know standard cabinet sizes by heart. Be DECISIVE about your estimates — if a cabinet looks like 15\", say 15\" with 0.85+ confidence. Only use low confidence (<0.6) when genuinely ambiguous. Return only valid JSON."},
                 {"role": "user", "content": [
