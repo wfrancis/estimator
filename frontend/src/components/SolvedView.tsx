@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import type { SolveResponse, SceneData } from '../types';
 import ElevationSVG from './ElevationSVG';
-import Kitchen3D from './Kitchen3D';
+const Kitchen3D = lazy(() => import('./Kitchen3D'));
+const ThreeTest = lazy(() => import('./ThreeTest'));
 
 interface SolvedViewProps {
   data: SolveResponse;
@@ -78,24 +79,26 @@ export default function SolvedView({ data, sceneData, onTapMeasure, onConfirm, l
         </div>
       )}
 
-      {/* 3D Kitchen Viewer (or SVG fallback) */}
-      {sceneData ? (
-        <div className="relative">
-          <Kitchen3D
-            data={sceneData}
-            onCabinetClick={handleTapCabinet}
-            height="450px"
-          />
-          <p className="text-xs text-gray-400 text-center mt-1">
-            Drag to rotate, scroll to zoom. Click a cabinet to enter a measured width.
-          </p>
-        </div>
-      ) : (
-        <>
-          <ElevationSVG svg={svg} onTapCabinet={handleTapCabinet} />
-          <p className="text-xs text-gray-400 text-center">Tap any cabinet to enter a measured width</p>
-        </>
-      )}
+      {/* Elevation drawing — SVG with improved wall cabinet alignment */}
+      <ElevationSVG svg={svg} onTapCabinet={handleTapCabinet} />
+      <p className="text-xs text-gray-400 text-center">Tap any cabinet to enter a measured width</p>
+
+      {/* 3D viewer (loads only if WebGL available) */}
+      {sceneData && typeof document !== 'undefined' && (() => {
+        try {
+          const canvas = document.createElement('canvas');
+          const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+          if (!gl) return null;
+        } catch { return null; }
+        return (
+          <Suspense fallback={<div className="h-[400px] flex items-center justify-center bg-gray-100 rounded-xl text-sm text-gray-500">Loading 3D viewer...</div>}>
+            <div className="mt-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">3D Preview</h3>
+              <Kitchen3D data={sceneData} onCabinetClick={handleTapCabinet} height="400px" />
+            </div>
+          </Suspense>
+        );
+      })()}
 
       {/* Solved Widths Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

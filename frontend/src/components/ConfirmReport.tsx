@@ -1,5 +1,6 @@
+import { lazy, Suspense } from 'react';
 import type { ConfirmResponse, SceneData } from '../types';
-import Kitchen3D from './Kitchen3D';
+const Kitchen3D = lazy(() => import('./Kitchen3D'));
 
 interface ConfirmReportProps {
   data: ConfirmResponse;
@@ -34,7 +35,9 @@ export default function ConfirmReport({ data, svgContent, sceneData, onNewMeasur
 
       {/* 3D Kitchen Viewer (or SVG fallback) */}
       {sceneData ? (
-        <Kitchen3D data={sceneData} height="400px" />
+        <Suspense fallback={<div className="h-[400px] flex items-center justify-center bg-gray-100 rounded-xl">Loading 3D...</div>}>
+          <Kitchen3D data={sceneData} height="400px" />
+        </Suspense>
       ) : svgContent ? (
         <div className="overflow-x-auto bg-white rounded-xl border border-gray-200 p-2 print:border-none">
           <div dangerouslySetInnerHTML={{ __html: svgContent }} />

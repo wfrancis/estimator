@@ -385,7 +385,7 @@ def layout_from_solver(
                 real_height=sec_height,
                 source="gap" if is_gap else w_source,
                 confidence=w_conf,
-                door_count=0 if is_gap else section.raw_pixel_width,  # approximate
+                door_count=0 if is_gap else max(1, int(w_inches / 15)),  # estimate doors from width
                 drawer_count=0,
                 label="HOOD" if is_gap else section.section_id,
                 group_id=group_lookup.get(section.section_id),
