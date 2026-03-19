@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import type { Step, AnalyzeResponse, SolveResponse, ConfirmResponse, SceneData } from './types';
-import { analyzePhoto, solveWidths, getElevationSvg, getSceneData, tapMeasure, confirmMeasurements } from './api';
+import type { Step, AnalyzeResponse, SolveResponse, ConfirmResponse } from './types';
+import { analyzePhoto, solveWidths, getElevationSvg, tapMeasure, confirmMeasurements } from './api';
 import Header from './components/Header';
 import StepIndicator from './components/StepIndicator';
 import PhotoUpload from './components/PhotoUpload';
@@ -14,10 +14,8 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Data from each step
   const [analyzeData, setAnalyzeData] = useState<AnalyzeResponse | null>(null);
   const [analysisSvg, setAnalysisSvg] = useState<string | null>(null);
-  const [sceneData, setSceneData] = useState<SceneData | null>(null);
   const [solveData, setSolveData] = useState<SolveResponse | null>(null);
   const [confirmData, setConfirmData] = useState<ConfirmResponse | null>(null);
   const [confirmSvg, setConfirmSvg] = useState<string | null>(null);
@@ -28,7 +26,6 @@ export default function App() {
     setStep('upload');
     setAnalyzeData(null);
     setAnalysisSvg(null);
-    setSceneData(null);
     setSolveData(null);
     setConfirmData(null);
     setConfirmSvg(null);
@@ -36,22 +33,16 @@ export default function App() {
     setLoading(false);
   }, []);
 
-  // Step 1: Upload and analyze photo
   const handleUpload = useCallback(async (file: File, refs?: Record<string, number>) => {
     setLoading(true);
     setError(null);
     try {
       const data = await analyzePhoto(file, refs);
       setAnalyzeData(data);
-
-      // Fetch initial elevation SVG
       try {
         const svg = await getElevationSvg(data.session_id);
         setAnalysisSvg(svg);
-      } catch {
-        // SVG may not be available before solving — that's OK
-      }
-
+      } catch { /* SVG not available before solving */ }
       setStep('analysis');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed');
@@ -60,7 +51,6 @@ export default function App() {
     }
   }, []);
 
-  // Step 3: Solve with total run
   const handleSolve = useCallback(async (totalRun: number, additional?: Record<string, number>) => {
     if (!sessionId) return;
     setLoading(true);
@@ -68,15 +58,6 @@ export default function App() {
     try {
       const data = await solveWidths(sessionId, totalRun, additional);
       setSolveData(data);
-
-      // Fetch 3D scene data
-      try {
-        const scene = await getSceneData(sessionId);
-        setSceneData(scene);
-      } catch {
-        // 3D not available — fallback to SVG
-      }
-
       setStep('solved');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Solve failed');
@@ -85,7 +66,6 @@ export default function App() {
     }
   }, [sessionId]);
 
-  // Tap-to-measure on solved view
   const handleTapMeasure = useCallback(async (sectionId: string, value: number) => {
     if (!sessionId) return;
     setLoading(true);
@@ -94,11 +74,6 @@ export default function App() {
       setSolveData((prev) =>
         prev ? { ...prev, svg: result.svg, needs_more_input: result.needs_more_input } : prev
       );
-      // Refresh scene data
-      try {
-        const scene = await getSceneData(sessionId);
-        setSceneData(scene);
-      } catch { /* ignore */ }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Tap-measure failed');
     } finally {
@@ -106,7 +81,6 @@ export default function App() {
     }
   }, [sessionId]);
 
-  // Confirm measurements
   const handleConfirm = useCallback(async () => {
     if (!sessionId) return;
     setLoading(true);
@@ -114,19 +88,12 @@ export default function App() {
     try {
       const data = await confirmMeasurements(sessionId);
       setConfirmData(data);
-
-      // Fetch final SVG + scene
       try {
         const svg = await getElevationSvg(sessionId);
         setConfirmSvg(svg);
       } catch {
         if (solveData) setConfirmSvg(solveData.svg);
       }
-      try {
-        const scene = await getSceneData(sessionId);
-        setSceneData(scene);
-      } catch { /* ignore */ }
-
       setStep('report');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Confirm failed');
@@ -140,7 +107,6 @@ export default function App() {
       <Header onReset={reset} />
       <StepIndicator currentStep={step} />
 
-      {/* Error banner */}
       {error && (
         <div className="max-w-2xl mx-auto px-4 pt-4">
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
@@ -151,56 +117,24 @@ export default function App() {
             </svg>
             <div>
               <p className="text-sm text-red-800">{error}</p>
-              <button
-                onClick={() => setError(null)}
-                className="text-xs text-red-600 underline mt-1"
-              >
-                Dismiss
-              </button>
+              <button onClick={() => setError(null)} className="text-xs text-red-600 underline mt-1">Dismiss</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Step content */}
-      {step === 'upload' && (
-        <PhotoUpload onUpload={handleUpload} loading={loading} />
-      )}
-
+      {step === 'upload' && <PhotoUpload onUpload={handleUpload} loading={loading} />}
       {step === 'analysis' && analyzeData && (
-        <AnalysisView
-          data={analyzeData}
-          svgContent={analysisSvg}
-          onNext={() => setStep('measure')}
-        />
+        <AnalysisView data={analyzeData} svgContent={analysisSvg} onNext={() => setStep('measure')} />
       )}
-
       {step === 'measure' && analyzeData && (
-        <MeasureInput
-          data={analyzeData}
-          svgContent={analysisSvg}
-          onSolve={handleSolve}
-          loading={loading}
-        />
+        <MeasureInput data={analyzeData} svgContent={analysisSvg} onSolve={handleSolve} loading={loading} />
       )}
-
       {step === 'solved' && solveData && (
-        <SolvedView
-          data={solveData}
-          sceneData={sceneData}
-          onTapMeasure={handleTapMeasure}
-          onConfirm={handleConfirm}
-          loading={loading}
-        />
+        <SolvedView data={solveData} onTapMeasure={handleTapMeasure} onConfirm={handleConfirm} loading={loading} />
       )}
-
       {step === 'report' && confirmData && (
-        <ConfirmReport
-          data={confirmData}
-          svgContent={confirmSvg}
-          sceneData={sceneData}
-          onNewMeasurement={reset}
-        />
+        <ConfirmReport data={confirmData} svgContent={confirmSvg} onNewMeasurement={reset} />
       )}
     </div>
   );
