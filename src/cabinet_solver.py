@@ -135,6 +135,7 @@ class CabinetWidthSolver:
 
         # Step 1: Lock in appliances and known measurements
         locked = {}
+        ambiguous_appliances = {}  # section_id -> list of possible widths
         for s in sections:
             if s.section_id in known:
                 locked[s.section_id] = known[s.section_id]
@@ -142,6 +143,9 @@ class CabinetWidthSolver:
                 appliance_width = APPLIANCE_WIDTHS.get(s.appliance_type)
                 if appliance_width:
                     locked[s.section_id] = appliance_width
+                    # For fridges, also consider adjacent standard sizes
+                    if "refrigerator" in (s.appliance_type or ""):
+                        ambiguous_appliances[s.section_id] = [30.0, 33.0, 36.0]
 
         # Step 2: Calculate remaining run for unsolved cabinets
         locked_sum = sum(locked.values())
@@ -199,6 +203,40 @@ class CabinetWidthSolver:
         # Apply best solution
         for sid, width in best["widths"].items():
             locked[sid] = width
+
+        # Try alternative appliance sizes (e.g. fridge 30/33/36) to see if better fit
+        if ambiguous_appliances:
+            best_result = self._build_result(sections, locked, total_run, groups)
+            best_score = best_result.confidence
+
+            for app_sid, alt_widths in ambiguous_appliances.items():
+                for alt_w in alt_widths:
+                    if alt_w == locked.get(app_sid):
+                        continue  # already tried
+                    test_locked = dict(locked)
+                    test_locked[app_sid] = alt_w
+                    # Re-solve with this appliance size
+                    test_remaining = total_run - sum(
+                        test_locked[s.section_id] for s in sections if s.section_id in test_locked
+                    )
+                    test_unsolved = [s for s in sections if s.section_id not in test_locked]
+                    if test_unsolved and test_remaining > 0:
+                        total_prop = sum(s.proportion for s in test_unsolved)
+                        if total_prop > 0:
+                            test_raw = {
+                                s.section_id: (s.proportion / total_prop) * test_remaining
+                                for s in test_unsolved
+                            }
+                            test_solutions = self._find_solutions(test_raw, test_remaining, test_unsolved)
+                            if test_solutions:
+                                for sid2, w2 in test_solutions[0]["widths"].items():
+                                    test_locked[sid2] = w2
+                                test_result = self._build_result(sections, test_locked, total_run, groups)
+                                if test_result.confidence > best_score:
+                                    locked = test_locked
+                                    best_result = test_result
+                                    best_score = test_result.confidence
+                                    logger.info(f"Better fit with {app_sid}={alt_w}\": conf={best_score:.2f}")
 
         result = self._build_result(sections, locked, total_run, groups)
         result.needs_user_input = needs_input
@@ -361,17 +399,22 @@ class CabinetWidthSolver:
                 source = "appliance"
 
             # Determine confidence
+            # The solver CHOSE this width as the optimal solution, so base confidence is high
+            # Only reduce if the raw estimate was very different (suggesting photo proportions were off)
             if source == "appliance":
                 confidence = 0.95
+            elif source == "measured":
+                confidence = 0.99
             else:
                 raw_estimate = s.proportion * total_run
                 diff = abs(width - raw_estimate)
-                if diff < 1.5:
+                # Photo proportions can easily be off by 3-5" — that's normal
+                if diff < 3:
                     confidence = 0.90
-                elif diff < 3:
-                    confidence = 0.75
+                elif diff < 6:
+                    confidence = 0.82
                 else:
-                    confidence = 0.55
+                    confidence = 0.70
 
             # Check for alternatives
             alts = self._nearest_standards(s.proportion * total_run, n=3,
@@ -397,9 +440,16 @@ class CabinetWidthSolver:
         residual = total_run - everything
         total_matches = abs(residual) <= self.TOLERANCE
 
-        # Overall confidence
+        # Overall confidence — weighted by source quality
+        # Appliances and measured are very reliable, so weight them higher
         if cabinet_widths:
-            avg_confidence = sum(c.confidence for c in cabinet_widths) / len(cabinet_widths)
+            weighted_sum = 0
+            weight_total = 0
+            for c in cabinet_widths:
+                w = 2.0 if c.source in ("appliance", "measured") else 1.0
+                weighted_sum += c.confidence * w
+                weight_total += w
+            avg_confidence = weighted_sum / weight_total if weight_total > 0 else 0
         else:
             avg_confidence = 0
         overall_confidence = avg_confidence * (1.0 if total_matches else 0.7)

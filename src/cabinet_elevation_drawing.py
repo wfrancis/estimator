@@ -410,13 +410,22 @@ def layout_from_solver(
     height_dims = []
     dim_x = cfg.MARGIN_LEFT - 15
 
-    # Wall cabinet height
-    height_dims.append(DimensionLine(
-        x1=dim_x, y1=wall_top,
-        x2=dim_x, y2=wall_top + wall_height,
-        label=f'{cfg.WALL_CABINET_HEIGHT:.0f}"',
-        source="solved", orientation="vertical",
-    ))
+    # Wall cabinet heights — show unique heights
+    # Group by height to avoid redundant labels
+    seen_heights = set()
+    for wc in wall_cabs:
+        if wc.cabinet_type == "wall_gap":
+            continue
+        h_label = f'{wc.real_height:.0f}"'
+        if h_label not in seen_heights:
+            seen_heights.add(h_label)
+            height_dims.append(DimensionLine(
+                x1=dim_x, y1=wc.y,
+                x2=dim_x, y2=wc.y + wc.height_px,
+                label=h_label,
+                source="solved", orientation="vertical",
+            ))
+            dim_x -= 20  # offset each unique height label
 
     # Backsplash
     height_dims.append(DimensionLine(
@@ -576,6 +585,13 @@ def generate_cabinet_details(cab: PositionedCabinet) -> str:
                 f'<circle cx="{knob_x}" cy="{knob_y}" r="2" '
                 f'fill="#999" stroke="none"/>'
             )
+
+    # Section ID label (small, bottom-right corner)
+    lines.append(
+        f'<text x="{x+w-4}" y="{y+h-4}" text-anchor="end" '
+        f'font-size="7" fill="#aaa" font-family="{DrawingConfig.FONT_FAMILY}">'
+        f'{cab.section_id}</text>'
+    )
 
     return "\n    ".join(lines)
 

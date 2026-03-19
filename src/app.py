@@ -265,12 +265,23 @@ def _analysis_to_wall_sections(analysis: PhotoAnalysisResult) -> List[SectionEst
         prop = s.pixel_proportion if s.pixel_proportion else (
             (s.estimated_width / total_est) if s.estimated_width else 0.1
         )
+        # Validate above_base_ids — filter out references to non-existent base IDs
+        valid_base_ids = {
+            sec.id for sec in analysis.cabinet_sections
+            if sec.cabinet_type in ("base", "appliance_opening")
+        }
+        above_ids = s.above_base_ids
+        if above_ids:
+            above_ids = [bid for bid in above_ids if bid in valid_base_ids]
+            if not above_ids:
+                above_ids = None
+
         sections.append(SectionEstimate(
             section_id=s.id,
             cabinet_type=s.cabinet_type,
             proportion=prop,
             raw_pixel_width=s.estimated_width or 0,
-            above_base_ids=s.above_base_ids,
+            above_base_ids=above_ids,
             estimated_height=s.estimated_height,
         ))
     return sections
