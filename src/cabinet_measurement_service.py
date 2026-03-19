@@ -379,7 +379,7 @@ class CabinetMeasurementAssistant:
 
         response = await self.client.chat.completions.create(
             model="gpt-5.4",
-            max_tokens=4000,
+            max_completion_tokens=4000,
             temperature=0.1,
             messages=[
                 {"role": "system", "content": "You are a precise cabinet measurement assistant. Return only valid JSON."},
@@ -587,7 +587,7 @@ class CabinetMeasurementAssistant:
 
         response = await self.client.chat.completions.create(
             model="gpt-5.4",
-            max_tokens=3000,
+            max_completion_tokens=3000,
             temperature=0.1,
             messages=[
                 {"role": "system", "content": "You are a cabinet measurement expert. Catch errors. Return only valid JSON."},
@@ -645,7 +645,7 @@ class CabinetMeasurementAssistant:
 
         response = await self.client.chat.completions.create(
             model="gpt-5.4",
-            max_tokens=3000,
+            max_completion_tokens=3000,
             temperature=0.1,
             messages=[
                 {"role": "system", "content": "You are a cabinet measurement assistant. Estimate conservatively. Return only valid JSON."},

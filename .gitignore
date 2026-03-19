@@ -5,7 +5,12 @@ __pycache__/
 .idea/
 .claude/
 *.egg-info/
-dist/
 build/
 .venv/
 venv/
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/node_modules/
+*.tsbuildinfo
