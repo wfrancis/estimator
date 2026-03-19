@@ -59,6 +59,8 @@
 
 After EVERY run of the estimator (photo → analyze → solve → report), you MUST:
 
+0. **VISUAL COMPARISON FIRST**: Before scoring anything, you MUST visually compare the SVG drawing to the original photo. The drawing must LOOK like the kitchen. If it doesn't look right, the score cannot be above 7.0 regardless of how good the numbers are. Numbers don't matter if the picture doesn't match.
+
 1. **Simulate 4 AI agent evaluators** with these personas:
    - **Cabinet Maker**: Would I trust these measurements to cut wood?
    - **Cabinet Designer / Estimator**: Does the drawing match the photo? Proportions correct?

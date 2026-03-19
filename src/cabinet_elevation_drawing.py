@@ -49,7 +49,7 @@ class DrawingConfig:
 
     # Dimension lines
     DIM_OFFSET = 20        # gap between cabinet and first dimension line
-    DIM_TIER_GAP = 22      # gap between individual and total run dimensions
+    DIM_TIER_GAP = 28      # gap between individual and total run dimensions
     DIM_FONT_SIZE = 11
     DIM_ARROWHEAD_SIZE = 5
 
@@ -261,7 +261,15 @@ def layout_from_solver(
             appliance_label=appliance_label,
         )
 
-        if section.is_appliance:
+        # Sinks are cabinets WITH a sink — they have doors. Only truly empty
+        # openings (fridge, range, DW, empty spaces) get the X-pattern rendering.
+        is_true_opening = section.is_appliance and section.appliance_type and \
+            "sink" not in (section.appliance_type or "").lower()
+        # Also treat empty appliance_opening (no appliance installed) as openings
+        if section.cabinet_type == "appliance_opening" and not section.appliance_type:
+            is_true_opening = True
+
+        if is_true_opening:
             appliance_openings.append(cab)
         else:
             base_cabinets.append(cab)
@@ -494,8 +502,13 @@ def generate_cabinet_details(cab: PositionedCabinet) -> str:
     x, y, w, h = cab.x, cab.y, cab.width_px, cab.height_px
     padding = 3  # inner padding
 
-    if cab.is_appliance:
-        # Appliance: just draw an X and label
+    # Sinks are appliances but have cabinet doors — render them like cabinets
+    is_x_pattern = cab.is_appliance and \
+        "sink" not in (cab.appliance_label or "").lower() and \
+        "SINK" not in (cab.appliance_label or "")
+
+    if is_x_pattern:
+        # Appliance opening: draw an X and label (fridge, range, DW, empty)
         lines.append(f'<line x1="{x+padding}" y1="{y+padding}" '
                       f'x2="{x+w-padding}" y2="{y+h-padding}" '
                       f'stroke="#999" stroke-width="0.5"/>')

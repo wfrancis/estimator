@@ -146,6 +146,9 @@ class CabinetWidthSolver:
                     # For fridges, also consider adjacent standard sizes
                     if "refrigerator" in (s.appliance_type or ""):
                         ambiguous_appliances[s.section_id] = [30.0, 33.0, 36.0]
+            elif s.cabinet_type == "appliance_opening" and not s.is_appliance:
+                # Empty appliance opening (no appliance installed) — prefer 24" (standard DW)
+                locked[s.section_id] = 24.0
 
         # Step 2: Calculate remaining run for unsolved cabinets
         locked_sum = sum(locked.values())
@@ -156,7 +159,7 @@ class CabinetWidthSolver:
 
         if not unsolved:
             # Everything is locked — just calculate fillers
-            return self._build_result(sections, locked, total_run, groups)
+            return self._build_result(sections, locked, total_run, groups, known)
 
         # Step 3: Calculate proportions for unsolved sections
         total_unsolved_proportion = sum(s.proportion for s in unsolved)
@@ -180,7 +183,7 @@ class CabinetWidthSolver:
             # Fallback: just snap each individually
             for sid, est in raw_estimates.items():
                 locked[sid] = self._nearest_standard(est)
-            return self._build_result(sections, locked, total_run, groups)
+            return self._build_result(sections, locked, total_run, groups, known)
 
         # Step 6: Check if disambiguation is needed
         best = solutions[0]
@@ -206,7 +209,7 @@ class CabinetWidthSolver:
 
         # Try alternative appliance sizes (e.g. fridge 30/33/36) to see if better fit
         if ambiguous_appliances:
-            best_result = self._build_result(sections, locked, total_run, groups)
+            best_result = self._build_result(sections, locked, total_run, groups, known)
             best_score = best_result.confidence
 
             for app_sid, alt_widths in ambiguous_appliances.items():
@@ -231,14 +234,14 @@ class CabinetWidthSolver:
                             if test_solutions:
                                 for sid2, w2 in test_solutions[0]["widths"].items():
                                     test_locked[sid2] = w2
-                                test_result = self._build_result(sections, test_locked, total_run, groups)
+                                test_result = self._build_result(sections, test_locked, total_run, groups, known)
                                 if test_result.confidence > best_score:
                                     locked = test_locked
                                     best_result = test_result
                                     best_score = test_result.confidence
                                     logger.info(f"Better fit with {app_sid}={alt_w}\": conf={best_score:.2f}")
 
-        result = self._build_result(sections, locked, total_run, groups)
+        result = self._build_result(sections, locked, total_run, groups, known)
         result.needs_user_input = needs_input
         result.disambiguation_reason = disambig_reason
         result.alternative_solutions = [
@@ -323,12 +326,25 @@ class CabinetWidthSolver:
             # 4. Does it sum to exactly the run? (bonus)
             exact_match_bonus = 0.1 if abs(filler_total) < self.TOLERANCE else 0
 
+            # 5. Symmetry bonus — prefer giving similar-proportion cabinets the same width
+            symmetry_bonus = 0.0
+            width_values = list(widths.values())
+            for i, (sid_a, w_a) in enumerate(widths.items()):
+                for sid_b, w_b in list(widths.items())[i+1:]:
+                    est_a = raw_estimates.get(sid_a, 0)
+                    est_b = raw_estimates.get(sid_b, 0)
+                    if est_a > 0 and est_b > 0:
+                        ratio = min(est_a, est_b) / max(est_a, est_b)
+                        if ratio > 0.85 and w_a == w_b:  # similar proportions + same width
+                            symmetry_bonus += 0.05
+
             # Weighted total
             score = (
-                proportion_score * 0.50
+                proportion_score * 0.45
                 + filler_score * 0.25
                 + frequency_score * 0.15
                 + exact_match_bonus * 0.10
+                + symmetry_bonus * 0.05
             )
 
             scored.append({
@@ -386,8 +402,10 @@ class CabinetWidthSolver:
         locked: Dict[str, float],
         total_run: float,
         groups: Optional[List[CabinetGroup]],
+        known_measurements: Optional[Dict[str, float]] = None,
     ) -> SolverResult:
         """Build the final SolverResult from locked widths."""
+        measured = known_measurements or {}
         cabinet_widths = []
         for s in sections:
             width = locked.get(s.section_id)
@@ -395,7 +413,9 @@ class CabinetWidthSolver:
                 continue
 
             source = "solved"
-            if s.is_appliance:
+            if s.section_id in measured:
+                source = "measured"
+            elif s.is_appliance:
                 source = "appliance"
 
             # Determine confidence
@@ -536,16 +556,14 @@ class CabinetWidthSolver:
                 ))
             else:
                 # Wall cabinet: snap to nearest standard wall width
-                # Use the span of base cabinets below as a guide
-                span_width = 0
-                if ws.above_base_ids:
-                    span_width = sum(base_width_lookup.get(bid, 0) for bid in ws.above_base_ids)
-
-                # Estimate: use span if available, otherwise proportion-based
-                if span_width > 0:
-                    est_width = span_width
-                elif ws.raw_pixel_width > 0:
+                # Use the AI's estimated width as primary guide, NOT the base span.
+                # The base span is only for gaps — a wall cabinet is its own box
+                # and can be narrower than the bases it sits above.
+                if ws.raw_pixel_width > 0:
                     est_width = ws.raw_pixel_width
+                elif ws.above_base_ids and len(ws.above_base_ids) == 1:
+                    # Single base below — wall cabinet is likely same width
+                    est_width = base_width_lookup.get(ws.above_base_ids[0], 24)
                 else:
                     est_width = 24  # fallback
 

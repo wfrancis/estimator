@@ -47,8 +47,8 @@ cabinet_sessions: Dict[str, dict] = {}
 
 def _get_cabinet_assistant() -> CabinetMeasurementAssistant:
     """Get or create cabinet measurement assistant."""
-    api_key = os.environ.get("OPENAI_API_KEY", "")
-    return CabinetMeasurementAssistant(openai_api_key=api_key)
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    return CabinetMeasurementAssistant(anthropic_api_key=anthropic_key)
 
 
 # ===== API Endpoints =====
@@ -400,6 +400,7 @@ async def get_elevation_drawing(session_id: str):
             sections=session["base_sections"],
             total_run=session["solve_request"].total_run,
             wall_sections=session.get("wall_sections"),
+            wall_solver_result=session.get("wall_solver_result"),
             groups=session.get("groups"),
             title="Cabinet Elevation — Solved",
         )
@@ -474,17 +475,29 @@ async def tap_measure(session_id: str, section_id: str, dimension: str, value: f
             if section_id in group.section_ids:
                 propagated_to = [sid for sid in group.section_ids if sid != section_id]
 
+    # Re-solve wall cabinets with updated base result
+    wall_solver_result = None
+    wall_sections = session.get("wall_sections")
+    if wall_sections:
+        wall_solver_result = solver.solve_wall_cabinets(
+            wall_sections=wall_sections,
+            base_solver_result=result,
+            base_sections=session["base_sections"],
+        )
+
     # Regenerate SVG
     svg = generate_elevation_svg(
         solver_result=result,
         sections=session["base_sections"],
         total_run=session["solve_request"].total_run,
-        wall_sections=session.get("wall_sections"),
+        wall_sections=wall_sections,
+        wall_solver_result=wall_solver_result,
         groups=session.get("groups"),
         title="Cabinet Elevation — Updated",
     )
 
     session["solver_result"] = result
+    session["wall_solver_result"] = wall_solver_result
 
     return {
         "session_id": session_id,
