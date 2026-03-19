@@ -1,18 +1,15 @@
-import { useState, lazy, Suspense } from 'react';
-import type { SolveResponse, SceneData } from '../types';
+import { useState } from 'react';
+import type { SolveResponse } from '../types';
 import ElevationSVG from './ElevationSVG';
-const Kitchen3D = lazy(() => import('./Kitchen3D'));
-const ThreeTest = lazy(() => import('./ThreeTest'));
 
 interface SolvedViewProps {
   data: SolveResponse;
-  sceneData?: SceneData | null;
   onTapMeasure: (sectionId: string, value: number) => void;
   onConfirm: () => void;
   loading: boolean;
 }
 
-export default function SolvedView({ data, sceneData, onTapMeasure, onConfirm, loading }: SolvedViewProps) {
+export default function SolvedView({ data, onTapMeasure, onConfirm, loading }: SolvedViewProps) {
   const [tapModal, setTapModal] = useState<string | null>(null);
   const [tapValue, setTapValue] = useState('');
 
@@ -79,26 +76,9 @@ export default function SolvedView({ data, sceneData, onTapMeasure, onConfirm, l
         </div>
       )}
 
-      {/* Elevation drawing — SVG with improved wall cabinet alignment */}
+      {/* SVG Elevation (solved state — tappable) */}
       <ElevationSVG svg={svg} onTapCabinet={handleTapCabinet} />
       <p className="text-xs text-gray-400 text-center">Tap any cabinet to enter a measured width</p>
-
-      {/* 3D viewer (loads only if WebGL available) */}
-      {sceneData && typeof document !== 'undefined' && (() => {
-        try {
-          const canvas = document.createElement('canvas');
-          const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
-          if (!gl) return null;
-        } catch { return null; }
-        return (
-          <Suspense fallback={<div className="h-[400px] flex items-center justify-center bg-gray-100 rounded-xl text-sm text-gray-500">Loading 3D viewer...</div>}>
-            <div className="mt-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">3D Preview</h3>
-              <Kitchen3D data={sceneData} onCabinetClick={handleTapCabinet} height="400px" />
-            </div>
-          </Suspense>
-        );
-      })()}
 
       {/* Solved Widths Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
