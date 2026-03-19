@@ -2,7 +2,7 @@
 
 export interface CabinetSection {
   id: string;
-  cabinet_type: 'base' | 'wall' | 'tall' | 'corner' | 'appliance_opening';
+  cabinet_type: 'base' | 'wall' | 'wall_gap' | 'tall' | 'corner' | 'appliance_opening';
   position: string;
   door_count: number;
   drawer_count: number;
@@ -18,6 +18,7 @@ export interface CabinetSection {
   filler_detected_left: boolean;
   filler_detected_right: boolean;
   same_size_as: string[];
+  above_base_ids: string[] | null;
 }
 
 export interface ReferenceObject {
@@ -123,3 +124,56 @@ export interface ConfirmResponse {
 }
 
 export type Step = 'upload' | 'analysis' | 'measure' | 'solved' | 'report';
+
+// 3D Scene types
+export interface SceneCabinet {
+  id: string;
+  type: string;
+  x: number;
+  width: number;
+  depth: number;
+  height: number;
+  doors: number;
+  drawers: number;
+  is_appliance?: boolean;
+  appliance_type?: string | null;
+  confidence: number;
+  source: string;
+}
+
+export interface SceneWallCabinet {
+  id: string;
+  type: string;
+  x: number;
+  width: number;
+  depth: number;
+  height: number;
+  y_bottom: number;
+  doors: number;
+  drawers: number;
+  is_gap: boolean;
+  gap_type: string | null;
+  confidence: number;
+  source: string;
+  above_base_ids: string[] | null;
+}
+
+export interface SceneFiller {
+  x: number;
+  width: number;
+  position: string;
+}
+
+export interface SceneData {
+  session_id: string;
+  total_run: number | null;
+  base_cabinets: SceneCabinet[];
+  wall_cabinets: SceneWallCabinet[];
+  fillers: SceneFiller[];
+  countertop: {
+    width: number;
+    depth: number;
+    height: number;
+    y: number;
+  };
+}

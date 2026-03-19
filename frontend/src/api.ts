@@ -3,6 +3,7 @@ import type {
   SolveResponse,
   TapMeasureResponse,
   ConfirmResponse,
+  SceneData,
 } from './types';
 
 const API_BASE = '/cabinet';
@@ -73,5 +74,11 @@ export async function confirmMeasurements(
     method: 'POST',
   });
   if (!res.ok) throw new Error(`Confirm failed: ${res.status}`);
+  return res.json();
+}
+
+export async function getSceneData(sessionId: string): Promise<SceneData> {
+  const res = await fetch(`${API_BASE}/${sessionId}/scene`);
+  if (!res.ok) throw new Error(`Scene data failed: ${res.status}`);
   return res.json();
 }

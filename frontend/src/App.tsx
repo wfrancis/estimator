@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import type { Step, AnalyzeResponse, SolveResponse, ConfirmResponse } from './types';
-import { analyzePhoto, solveWidths, getElevationSvg, tapMeasure, confirmMeasurements } from './api';
+import type { Step, AnalyzeResponse, SolveResponse, ConfirmResponse, SceneData } from './types';
+import { analyzePhoto, solveWidths, getElevationSvg, getSceneData, tapMeasure, confirmMeasurements } from './api';
 import Header from './components/Header';
 import StepIndicator from './components/StepIndicator';
 import PhotoUpload from './components/PhotoUpload';
@@ -17,6 +17,7 @@ export default function App() {
   // Data from each step
   const [analyzeData, setAnalyzeData] = useState<AnalyzeResponse | null>(null);
   const [analysisSvg, setAnalysisSvg] = useState<string | null>(null);
+  const [sceneData, setSceneData] = useState<SceneData | null>(null);
   const [solveData, setSolveData] = useState<SolveResponse | null>(null);
   const [confirmData, setConfirmData] = useState<ConfirmResponse | null>(null);
   const [confirmSvg, setConfirmSvg] = useState<string | null>(null);
@@ -27,6 +28,7 @@ export default function App() {
     setStep('upload');
     setAnalyzeData(null);
     setAnalysisSvg(null);
+    setSceneData(null);
     setSolveData(null);
     setConfirmData(null);
     setConfirmSvg(null);
@@ -66,6 +68,15 @@ export default function App() {
     try {
       const data = await solveWidths(sessionId, totalRun, additional);
       setSolveData(data);
+
+      // Fetch 3D scene data
+      try {
+        const scene = await getSceneData(sessionId);
+        setSceneData(scene);
+      } catch {
+        // 3D not available — fallback to SVG
+      }
+
       setStep('solved');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Solve failed');
@@ -80,10 +91,14 @@ export default function App() {
     setLoading(true);
     try {
       const result = await tapMeasure(sessionId, sectionId, 'width', value);
-      // Update the solve data with new SVG
       setSolveData((prev) =>
         prev ? { ...prev, svg: result.svg, needs_more_input: result.needs_more_input } : prev
       );
+      // Refresh scene data
+      try {
+        const scene = await getSceneData(sessionId);
+        setSceneData(scene);
+      } catch { /* ignore */ }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Tap-measure failed');
     } finally {
@@ -100,14 +115,17 @@ export default function App() {
       const data = await confirmMeasurements(sessionId);
       setConfirmData(data);
 
-      // Fetch final SVG
+      // Fetch final SVG + scene
       try {
         const svg = await getElevationSvg(sessionId);
         setConfirmSvg(svg);
       } catch {
-        // Use solve SVG as fallback
         if (solveData) setConfirmSvg(solveData.svg);
       }
+      try {
+        const scene = await getSceneData(sessionId);
+        setSceneData(scene);
+      } catch { /* ignore */ }
 
       setStep('report');
     } catch (err) {
@@ -169,6 +187,7 @@ export default function App() {
       {step === 'solved' && solveData && (
         <SolvedView
           data={solveData}
+          sceneData={sceneData}
           onTapMeasure={handleTapMeasure}
           onConfirm={handleConfirm}
           loading={loading}
@@ -179,6 +198,7 @@ export default function App() {
         <ConfirmReport
           data={confirmData}
           svgContent={confirmSvg}
+          sceneData={sceneData}
           onNewMeasurement={reset}
         />
       )}
