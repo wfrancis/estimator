@@ -1,15 +1,12 @@
-import { lazy, Suspense } from 'react';
-import type { ConfirmResponse, SceneData } from '../types';
-const Kitchen3D = lazy(() => import('./Kitchen3D'));
+import type { ConfirmResponse } from '../types';
 
 interface ConfirmReportProps {
   data: ConfirmResponse;
   svgContent: string | null;
-  sceneData?: SceneData | null;
   onNewMeasurement: () => void;
 }
 
-export default function ConfirmReport({ data, svgContent, sceneData, onNewMeasurement }: ConfirmReportProps) {
+export default function ConfirmReport({ data, svgContent, onNewMeasurement }: ConfirmReportProps) {
   const { report } = data;
 
   const handlePrint = () => window.print();
@@ -33,12 +30,8 @@ export default function ConfirmReport({ data, svgContent, sceneData, onNewMeasur
         </div>
       </div>
 
-      {/* 3D Kitchen Viewer (or SVG fallback) */}
-      {sceneData ? (
-        <Suspense fallback={<div className="h-[400px] flex items-center justify-center bg-gray-100 rounded-xl">Loading 3D...</div>}>
-          <Kitchen3D data={sceneData} height="400px" />
-        </Suspense>
-      ) : svgContent ? (
+      {/* SVG Elevation */}
+      {svgContent ? (
         <div className="overflow-x-auto bg-white rounded-xl border border-gray-200 p-2 print:border-none">
           <div dangerouslySetInnerHTML={{ __html: svgContent }} />
         </div>
