@@ -53,6 +53,21 @@
 
 ---
 
+## HARD CONSTRAINTS — Cabinet Maker Tool
+
+### This is NOT a kitchen tool. It is a cabinet maker's tool.
+
+**We are cabinet makers.** Cabinets go in kitchens, bathrooms, laundry rooms, offices, garages, entertainment centers, mudrooms, closets, and anywhere else. ALL code, UI text, prompts, variable names, comments, and documentation MUST be room-agnostic. Never say "kitchen" — say "space", "room", or "layout".
+
+### Every fix must be GENERAL, not image-specific.
+
+- **NEVER optimize for a single test image.** Every change to the AI prompts, solver, renderer, or scene generation must work correctly for ALL cabinet layouts — not just the current test photo.
+- When fixing a bug found with one image, ask: "Would this fix also work for a bathroom vanity? A garage workshop? An office built-in?" If no, the fix is wrong.
+- **Track iterations in `iterations.md`** — record what changed, what improved, what broke. Include lessons learned that apply to ALL future images, not just the current one.
+- The solver, renderer, and AI prompts must handle: single-wall runs, L-shaped layouts, tall cabinets (pantry, oven), short cabinets (above fridge), open shelving, varying counter heights, no countertop at all, and mixed appliance types.
+
+---
+
 ## HARD CONSTRAINTS — AI Evaluation Panel
 
 ### Mandatory: Run AI Evaluation Panel After Every Code Change

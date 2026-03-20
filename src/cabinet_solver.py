@@ -27,7 +27,8 @@ SIZE_FREQUENCY = {
     42: 0.6, 48: 0.4,
 }
 
-# Known appliance widths (exact)
+# Known appliance widths (exact — only appliances with fixed physical dimensions)
+# Sinks are NOT included because they sit inside variable-width base cabinets (24-36")
 APPLIANCE_WIDTHS = {
     "refrigerator_30": 30.0,
     "refrigerator_33": 33.0,
@@ -36,8 +37,6 @@ APPLIANCE_WIDTHS = {
     "range_36": 36.0,
     "dishwasher": 24.0,
     "microwave_otr": 30.0,
-    "sink_single_bowl": 30.0,
-    "sink_double_bowl": 36.0,
 }
 
 
@@ -147,8 +146,9 @@ class CabinetWidthSolver:
                     if "refrigerator" in (s.appliance_type or ""):
                         ambiguous_appliances[s.section_id] = [30.0, 33.0, 36.0]
             elif s.cabinet_type == "appliance_opening" and not s.is_appliance:
-                # Empty appliance opening (no appliance installed) — prefer 24" (standard DW)
-                locked[s.section_id] = 24.0
+                # Empty appliance opening — use AI's estimated width (range=30, DW=24, etc.)
+                raw_est = s.raw_pixel_width if s.raw_pixel_width > 0 else 24.0
+                locked[s.section_id] = self._nearest_standard(raw_est)
 
         # Step 2: Calculate remaining run for unsolved cabinets
         locked_sum = sum(locked.values())

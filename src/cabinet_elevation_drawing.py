@@ -502,10 +502,12 @@ def generate_cabinet_details(cab: PositionedCabinet) -> str:
     x, y, w, h = cab.x, cab.y, cab.width_px, cab.height_px
     padding = 3  # inner padding
 
-    # Sinks are appliances but have cabinet doors — render them like cabinets
-    is_x_pattern = cab.is_appliance and \
-        "sink" not in (cab.appliance_label or "").lower() and \
-        "SINK" not in (cab.appliance_label or "")
+    # Determine if this should render as an X-pattern (appliance opening) or with doors.
+    # Sinks are appliances but have cabinet doors — render them like cabinets.
+    # Empty openings (no appliance) should also show X.
+    is_sink = "sink" in (cab.appliance_label or "").lower() or "SINK" in (cab.appliance_label or "")
+    is_x_pattern = (cab.is_appliance and not is_sink) or \
+        (cab.cabinet_type == "appliance_opening" and not is_sink)
 
     if is_x_pattern:
         # Appliance opening: draw an X and label (fridge, range, DW, empty)

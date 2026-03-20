@@ -13,6 +13,9 @@ export default defineConfig({
       '/test-image': {
         target: 'http://127.0.0.1:8000',
       },
+      '/ai-detected': {
+        target: 'http://127.0.0.1:8000',
+      },
     },
   },
 })

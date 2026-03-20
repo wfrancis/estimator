@@ -31,7 +31,7 @@ export default function PhotoUpload({ onUpload, loading }: PhotoUploadProps) {
 
   return (
     <div className="max-w-lg mx-auto px-4 py-6">
-      <h2 className="text-xl font-bold text-gray-900 mb-2">Take a Kitchen Photo</h2>
+      <h2 className="text-xl font-bold text-gray-900 mb-2">Take a Photo of Your Cabinets</h2>
       <p className="text-gray-600 text-sm mb-6">
         Stand straight-on facing the cabinet wall. Include all cabinets from wall to wall.
       </p>
@@ -82,7 +82,7 @@ export default function PhotoUpload({ onUpload, loading }: PhotoUploadProps) {
         <div className="space-y-4">
           {/* Photo preview */}
           <div className="relative rounded-xl overflow-hidden border border-gray-200">
-            <img src={preview} alt="Kitchen" className="w-full" />
+            <img src={preview} alt="Cabinets" className="w-full" />
             <button
               onClick={() => {
                 setPreview(null);
@@ -142,7 +142,7 @@ export default function PhotoUpload({ onUpload, loading }: PhotoUploadProps) {
                 Analyzing...
               </span>
             ) : (
-              'Analyze Photo'
+              'Analyze & Build 3D View'
             )}
           </button>
         </div>

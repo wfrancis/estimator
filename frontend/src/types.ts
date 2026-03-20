@@ -123,7 +123,53 @@ export interface ConfirmResponse {
   report: ConfirmReport;
 }
 
-export type Step = 'upload' | 'analysis' | 'measure' | 'solved' | 'report';
+export type Step = 'upload' | 'viewer';
+
+// Interactive editor box (overlay on photo)
+export interface EditorBox {
+  id: string;
+  type: 'base' | 'wall' | 'appliance_opening' | 'wall_gap';
+  x: number;      // fraction 0-1 of image width
+  y: number;      // fraction 0-1 of image height
+  w: number;      // fraction 0-1 of image width
+  h: number;      // fraction 0-1 of image height
+  widthInches?: number;
+  heightInches?: number;
+  isAppliance: boolean;
+  applianceType?: string;
+  doors: number;
+  drawers: number;
+}
+
+// Layout box sent to backend
+export interface LayoutBox {
+  id: string;
+  cabinet_type: string;
+  width_inches?: number;
+  height_inches?: number;
+  position_order: number;
+  is_appliance: boolean;
+  appliance_type?: string;
+  doors: number;
+  drawers: number;
+}
+
+export interface UpdateLayoutRequest {
+  boxes: LayoutBox[];
+  total_run?: number;
+}
+
+// Chat types
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatResponse {
+  reply: string;
+  updated_scene?: SceneData;
+  changes_made: string[];
+}
 
 // 3D Scene types
 export interface SceneCabinet {

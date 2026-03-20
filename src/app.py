@@ -59,7 +59,7 @@ async def root():
     return {
         "message": "Cabinet Measurement API",
         "version": "1.0.0",
-        "description": "AI-powered cabinet measurement from kitchen photos",
+        "description": "AI-powered cabinet measurement from photos",
     }
 
 
@@ -72,6 +72,15 @@ async def get_test_image():
     raise HTTPException(status_code=404, detail="No test image")
 
 
+@app.get("/ai-detected")
+async def get_ai_detected():
+    """Serve AI-detected annotated image."""
+    img_path = Path(__file__).parent / "ai_detected.png"
+    if img_path.exists():
+        return Response(content=img_path.read_bytes(), media_type="image/png")
+    raise HTTPException(status_code=404, detail="No detected image")
+
+
 @app.get("/cabinet/guide")
 async def get_photo_capture_guide():
     """Get instructions for taking good cabinet measurement photos."""
@@ -80,14 +89,14 @@ async def get_photo_capture_guide():
 
 @app.post("/cabinet/analyze")
 async def analyze_cabinet_photo(
-    photo: UploadFile = File(..., description="Kitchen photo"),
+    photo: UploadFile = File(..., description="Photo of cabinets"),
     known_references: Optional[str] = Form(
         None,
         description='JSON dict of known references, e.g. {"refrigerator_width": 30, "range_width": 30}',
     ),
 ):
     """
-    Step 1: Upload a kitchen photo. Returns identified cabinet sections
+    Step 1: Upload a photo of cabinets. Returns identified cabinet sections
     and a prioritized measurement checklist for the person on-site.
     """
     assistant = _get_cabinet_assistant()
@@ -563,7 +572,7 @@ async def confirm_measurements(session_id: str):
 async def get_scene_data(session_id: str):
     """
     Get 3D scene data for the Three.js viewer.
-    Returns all cabinet positions, dimensions, and metadata needed to render a 3D kitchen.
+    Returns all cabinet positions, dimensions, and metadata needed to render a 3D cabinet layout.
     """
     if session_id not in cabinet_sessions:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -574,7 +583,7 @@ async def get_scene_data(session_id: str):
     wall_solver_result = session.get("wall_solver_result")
     total_run = session["solve_request"].total_run if "solve_request" in session else None
 
-    # Build base width lookup
+    # Build solver width lookups
     base_width_lookup = {}
     if solver_result:
         for cw in solver_result.cabinet_widths:
@@ -584,7 +593,6 @@ async def get_scene_data(session_id: str):
                 "source": cw.source,
             }
 
-    # Build wall width lookup
     wall_width_lookup = {}
     if wall_solver_result:
         for cw in wall_solver_result.cabinet_widths:
@@ -594,37 +602,100 @@ async def get_scene_data(session_id: str):
                 "source": cw.source,
             }
 
+    # Use layout_boxes if available (from interactive editor), else fall back to analysis
+    layout_boxes = session.get("layout_boxes")
+
     # Position base cabinets left-to-right
     base_cabinets = []
     x_cursor = 0.0
-    # Add left filler if present
     fillers_scene = []
+
+    # Add left filler if present
     if solver_result:
         for f in solver_result.fillers:
             if "left" in f.position.lower():
                 fillers_scene.append({"x": x_cursor, "width": f.width, "position": f.position})
                 x_cursor += f.width
 
-    for s in analysis.cabinet_sections:
-        if s.cabinet_type not in ("base", "appliance_opening"):
-            continue
-        w = base_width_lookup.get(s.id, {}).get("width", s.estimated_width or 24)
-        cab = {
-            "id": s.id,
-            "type": s.cabinet_type,
-            "x": x_cursor,
-            "width": w,
-            "depth": 24.0,
-            "height": 34.5,
-            "doors": s.door_count,
-            "drawers": s.drawer_count,
-            "is_appliance": s.is_appliance,
-            "appliance_type": s.appliance_type,
-            "confidence": base_width_lookup.get(s.id, {}).get("confidence", s.confidence),
-            "source": base_width_lookup.get(s.id, {}).get("source", "estimated"),
-        }
-        base_cabinets.append(cab)
-        x_cursor += w
+    if layout_boxes:
+        # Interactive editor path: use layout boxes sorted by position_order
+        base_boxes = sorted(
+            [b for b in layout_boxes if b.cabinet_type in ("base", "appliance_opening")],
+            key=lambda b: b.position_order,
+        )
+        for b in base_boxes:
+            solved = base_width_lookup.get(b.id, {})
+            w = solved.get("width", b.width_inches or 24)
+
+            # Determine height based on appliance type
+            cab_height = b.height_inches or 34.5
+            cab_depth = 24.0
+            if b.is_appliance and b.appliance_type:
+                atype = b.appliance_type.lower()
+                if "fridge" in atype or "refrigerator" in atype:
+                    cab_height = 68.0
+                    cab_depth = 30.0
+                elif "oven" in atype or "wall oven" in atype:
+                    cab_height = 48.0
+
+            cab = {
+                "id": b.id,
+                "type": b.cabinet_type,
+                "x": x_cursor,
+                "width": w,
+                "depth": cab_depth,
+                "height": cab_height,
+                "doors": b.doors,
+                "drawers": b.drawers,
+                "is_appliance": b.is_appliance,
+                "appliance_type": b.appliance_type,
+                "confidence": solved.get("confidence", 0.5),
+                "source": solved.get("source", "estimated"),
+            }
+            base_cabinets.append(cab)
+            x_cursor += w
+
+        # Wall cabinets from layout boxes
+        wall_boxes = sorted(
+            [b for b in layout_boxes if b.cabinet_type in ("wall", "wall_gap")],
+            key=lambda b: b.position_order,
+        )
+    else:
+        # Original analysis path
+        for s in analysis.cabinet_sections:
+            if s.cabinet_type not in ("base", "appliance_opening"):
+                continue
+            w = base_width_lookup.get(s.id, {}).get("width", s.estimated_width or 24)
+
+            # Determine height based on appliance type
+            cab_height = 34.5
+            cab_depth = 24.0
+            if s.is_appliance and s.appliance_type:
+                atype = s.appliance_type.lower()
+                if "fridge" in atype or "refrigerator" in atype:
+                    cab_height = 68.0  # Full-height fridge
+                    cab_depth = 30.0
+                elif "oven" in atype or "wall oven" in atype:
+                    cab_height = 48.0
+                # Range/stove stays at base height (34.5)
+
+            cab = {
+                "id": s.id,
+                "type": s.cabinet_type,
+                "x": x_cursor,
+                "width": w,
+                "depth": cab_depth,
+                "height": cab_height,
+                "doors": s.door_count,
+                "drawers": s.drawer_count,
+                "is_appliance": s.is_appliance,
+                "appliance_type": s.appliance_type,
+                "confidence": base_width_lookup.get(s.id, {}).get("confidence", s.confidence),
+                "source": base_width_lookup.get(s.id, {}).get("source", "estimated"),
+            }
+            base_cabinets.append(cab)
+            x_cursor += w
+        wall_boxes = None
 
     # Add right filler
     if solver_result:
@@ -635,45 +706,70 @@ async def get_scene_data(session_id: str):
     # Build base position lookup for wall cabinet alignment
     base_pos_lookup = {c["id"]: {"x": c["x"], "width": c["width"]} for c in base_cabinets}
 
-    # Position wall cabinets (aligned to base below)
+    # Position wall cabinets
     wall_cabinets = []
-    for s in analysis.cabinet_sections:
-        if s.cabinet_type not in ("wall", "wall_gap"):
-            continue
-        w = wall_width_lookup.get(s.id, {}).get("width", s.estimated_width or 24)
-        h = s.estimated_height or 30.0
-        is_gap = s.cabinet_type == "wall_gap"
 
-        # Find x position from above_base_ids
-        wx = 0.0
-        if s.above_base_ids:
-            base_xs = [base_pos_lookup[bid]["x"] for bid in s.above_base_ids if bid in base_pos_lookup]
-            if base_xs:
-                wx = min(base_xs)
-                # Width can also be derived from the span of base cabinets
-                right_edges = [
-                    base_pos_lookup[bid]["x"] + base_pos_lookup[bid]["width"]
-                    for bid in s.above_base_ids if bid in base_pos_lookup
-                ]
-                if right_edges:
-                    w = max(right_edges) - wx
+    if wall_boxes is not None:
+        # Interactive editor path
+        wx_cursor = 0.0
+        for b in wall_boxes:
+            solved = wall_width_lookup.get(b.id, {})
+            w = solved.get("width", b.width_inches or 24)
+            h = b.height_inches or 30.0
+            is_gap = b.cabinet_type == "wall_gap"
+            wall_cabinets.append({
+                "id": b.id,
+                "type": b.cabinet_type,
+                "x": wx_cursor,
+                "width": w,
+                "depth": 12.0,
+                "height": h,
+                "y_bottom": 54.0,
+                "doors": b.doors if not is_gap else 0,
+                "drawers": 0,
+                "is_gap": is_gap,
+                "gap_type": None,
+                "confidence": solved.get("confidence", 0.5),
+                "source": solved.get("source", "estimated"),
+                "above_base_ids": None,
+            })
+            wx_cursor += w
+    else:
+        # Original analysis path — position wall cabinets left-to-right sequentially
+        wx_cursor = 0.0
+        for s in analysis.cabinet_sections:
+            if s.cabinet_type not in ("wall", "wall_gap"):
+                continue
+            w = wall_width_lookup.get(s.id, {}).get("width", s.estimated_width or 24)
+            h = s.estimated_height or 30.0
+            is_gap = s.cabinet_type == "wall_gap"
 
-        wall_cabinets.append({
-            "id": s.id,
-            "type": s.cabinet_type,
-            "x": wx,
-            "width": w,
-            "depth": 12.0,
-            "height": h,
-            "y_bottom": 54.0,  # 18" above 36" countertop
-            "doors": s.door_count if not is_gap else 0,
-            "drawers": 0,
-            "is_gap": is_gap,
-            "gap_type": "hood" if is_gap and "hood" in (s.notes or "").lower() else ("open" if is_gap else None),
-            "confidence": wall_width_lookup.get(s.id, {}).get("confidence", s.confidence),
-            "source": wall_width_lookup.get(s.id, {}).get("source", "estimated"),
-            "above_base_ids": s.above_base_ids,
-        })
+            wall_cabinets.append({
+                "id": s.id,
+                "type": s.cabinet_type,
+                "x": wx_cursor,
+                "width": w,
+                "depth": 12.0,
+                "height": h,
+                "y_bottom": 54.0,
+                "doors": s.door_count if not is_gap else 0,
+                "drawers": 0,
+                "is_gap": is_gap,
+                "gap_type": "hood" if is_gap and "hood" in (s.notes or "").lower() else ("open" if is_gap else None),
+                "confidence": wall_width_lookup.get(s.id, {}).get("confidence", s.confidence),
+                "source": wall_width_lookup.get(s.id, {}).get("source", "estimated"),
+                "above_base_ids": s.above_base_ids,
+            })
+            wx_cursor += w
+
+    # Calculate countertop width excluding tall appliances (fridge)
+    countertop_width = 0.0
+    for cab in base_cabinets:
+        if cab.get("height", 34.5) <= 36:  # Only base-height items get countertop
+            countertop_width += cab["width"]
+        # Also add filler widths
+    for f in fillers_scene:
+        countertop_width += f["width"]
 
     return {
         "session_id": session_id,
@@ -682,11 +778,245 @@ async def get_scene_data(session_id: str):
         "wall_cabinets": wall_cabinets,
         "fillers": fillers_scene,
         "countertop": {
-            "width": total_run or x_cursor,
+            "width": countertop_width or (total_run or x_cursor),
             "depth": 25.5,
             "height": 1.5,
             "y": 34.5,
         },
+    }
+
+
+# ===== INTERACTIVE EDITOR ENDPOINTS =====
+
+
+class LayoutBox(BaseModel):
+    id: str
+    cabinet_type: str
+    width_inches: Optional[float] = None
+    height_inches: Optional[float] = None
+    position_order: int
+    is_appliance: bool = False
+    appliance_type: Optional[str] = None
+    doors: int = 0
+    drawers: int = 0
+
+
+class UpdateLayoutRequest(BaseModel):
+    boxes: List[LayoutBox]
+    total_run: Optional[float] = None
+
+
+@app.post("/cabinet/{session_id}/update-layout")
+async def update_layout(session_id: str, request: UpdateLayoutRequest):
+    """
+    Interactive editor sends manually-placed boxes + total run.
+    Converts to solver input, solves, returns result + scene data.
+    """
+    if session_id not in cabinet_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = cabinet_sessions[session_id]
+
+    # Convert layout boxes to SectionEstimate for solver
+    base_boxes = [b for b in request.boxes if b.cabinet_type in ("base", "appliance_opening")]
+    wall_boxes = [b for b in request.boxes if b.cabinet_type in ("wall", "wall_gap")]
+
+    # Calculate proportions from ordering (equal weight as fallback)
+    total_base = len(base_boxes) or 1
+    base_sections = []
+    known_measurements = {}
+
+    for b in sorted(base_boxes, key=lambda x: x.position_order):
+        prop = 1.0 / total_base
+        # If user supplied a width, use it as a known measurement
+        if b.width_inches and request.total_run:
+            prop = b.width_inches / request.total_run
+            known_measurements[b.id] = b.width_inches
+
+        base_sections.append(SectionEstimate(
+            section_id=b.id,
+            cabinet_type=b.cabinet_type,
+            proportion=prop,
+            raw_pixel_width=b.width_inches or 0,
+            is_appliance=b.is_appliance,
+            appliance_type=b.appliance_type,
+            filler_detected_left=False,
+            filler_detected_right=False,
+        ))
+
+    wall_sections = []
+    for b in sorted(wall_boxes, key=lambda x: x.position_order):
+        wall_sections.append(SectionEstimate(
+            section_id=b.id,
+            cabinet_type=b.cabinet_type,
+            proportion=1.0 / max(len(wall_boxes), 1),
+            raw_pixel_width=b.width_inches or 0,
+            estimated_height=b.height_inches,
+        ))
+
+    if not base_sections:
+        raise HTTPException(status_code=400, detail="No base cabinets in layout")
+
+    if not request.total_run or request.total_run <= 0:
+        raise HTTPException(status_code=400, detail="total_run required and must be > 0")
+
+    # Group and solve
+    groups = group_by_proportions(base_sections)
+    solver = CabinetWidthSolver()
+    result = solver.solve(
+        total_run=request.total_run,
+        sections=base_sections,
+        groups=groups,
+        known_measurements=known_measurements if known_measurements else None,
+    )
+
+    # Solve wall cabinets
+    wall_solver_result = None
+    if wall_sections:
+        wall_solver_result = solver.solve_wall_cabinets(
+            wall_sections=wall_sections,
+            base_solver_result=result,
+            base_sections=base_sections,
+        )
+
+    # Generate SVG
+    svg = generate_elevation_svg(
+        solver_result=result,
+        sections=base_sections,
+        total_run=request.total_run,
+        wall_sections=wall_sections if wall_sections else None,
+        wall_solver_result=wall_solver_result,
+        groups=groups,
+        title="Cabinet Elevation — Solved",
+    )
+
+    # Store in session
+    solve_req = SolveRequest(total_run=request.total_run, additional_measurements=known_measurements)
+    session["solver_result"] = result
+    session["wall_solver_result"] = wall_solver_result
+    session["solve_request"] = solve_req
+    session["base_sections"] = base_sections
+    session["wall_sections"] = wall_sections
+    session["groups"] = groups
+    session["layout_boxes"] = request.boxes
+
+    return {
+        "session_id": session_id,
+        "solved": {
+            "cabinet_widths": [
+                {
+                    "section_id": cw.section_id,
+                    "width": cw.standard_width,
+                    "confidence": cw.confidence,
+                    "source": cw.source,
+                    "alternatives": cw.alternatives,
+                }
+                for cw in result.cabinet_widths
+            ],
+            "fillers": [
+                {"position": f.position, "width": f.width, "confidence": f.confidence}
+                for f in result.fillers
+            ],
+            "total_matches": result.total_matches,
+            "confidence": result.confidence,
+        },
+        "needs_more_input": result.needs_user_input,
+        "disambiguation_reason": result.disambiguation_reason,
+        "svg": svg,
+    }
+
+
+class ChatRequest(BaseModel):
+    message: str
+    current_scene: dict
+
+
+@app.post("/cabinet/{session_id}/chat")
+async def chat_with_assistant(session_id: str, request: ChatRequest):
+    """
+    AI chat assist for the 3D viewer. User describes changes in natural language,
+    AI returns updated scene data.
+    """
+    if session_id not in cabinet_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    import anthropic
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set")
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    system_prompt = """You are a cabinet layout assistant for cabinet makers. This tool works for any room — kitchens, bathrooms, laundry, offices, garages, etc.
+
+You will receive the current scene data as JSON and a user request to modify it. Return ONLY valid JSON with the updated scene data. Do not include any explanation — just the JSON.
+
+Rules:
+- Only modify what the user asks for
+- Cabinet widths must be standard factory sizes: 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 42, 48 inches
+- Base cabinet height is typically 34.5" (without countertop)
+- Wall/upper cabinet heights vary: 12, 15, 18, 24, 30, 36, 42 inches
+- Countertop adds 1.5" on top of base cabinets
+- Keep all existing fields intact when modifying"""
+
+    try:
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=4096,
+            system=system_prompt,
+            messages=[{
+                "role": "user",
+                "content": f"Current scene:\n```json\n{json.dumps(request.current_scene, indent=2)}\n```\n\nUser request: {request.message}\n\nReturn the updated scene JSON only."
+            }],
+        )
+
+        reply_text = response.content[0].text.strip()
+
+        # Try to parse as JSON
+        # Strip markdown code fences if present
+        if reply_text.startswith("```"):
+            lines = reply_text.split("\n")
+            reply_text = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+
+        updated_scene = json.loads(reply_text)
+
+        return {
+            "reply": f"Updated: {request.message}",
+            "updated_scene": updated_scene,
+            "changes_made": [request.message],
+        }
+
+    except json.JSONDecodeError:
+        return {
+            "reply": reply_text if 'reply_text' in dir() else "Could not parse AI response as JSON",
+            "updated_scene": None,
+            "changes_made": [],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+
+
+@app.get("/cabinet/{session_id}/export")
+async def export_config(session_id: str):
+    """
+    Export the pure-numbers JSON config that can regenerate the 3D view.
+    This is 'the program' — a standalone config with no photo dependency.
+    """
+    if session_id not in cabinet_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = cabinet_sessions[session_id]
+    if "solver_result" not in session:
+        raise HTTPException(status_code=400, detail="Run solve first")
+
+    # Get scene data by calling the scene logic
+    scene_response = await get_scene_data(session_id)
+
+    return {
+        "version": "1.0",
+        "exported_at": str(uuid.uuid4())[:8],
+        **scene_response,
     }
 
 

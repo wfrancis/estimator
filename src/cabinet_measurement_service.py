@@ -184,18 +184,18 @@ class MeasurementReport(BaseModel):
 
 # ===== TWO-PASS PROMPTS =====
 
-PASS1_OBSERVE_PROMPT = """Look at this kitchen photo carefully. Describe EXACTLY what you see, as if you're a cabinet maker standing in this kitchen.
+PASS1_OBSERVE_PROMPT = """Look at this photo carefully. Describe EXACTLY what you see, as if you're a cabinet maker standing in front of these cabinets.
 
 Go left to right across the photo. For each position, describe:
 - BASE LEVEL: What's there? A cabinet (how many doors? drawers on top?), an empty space (can you see the floor/wall behind?), an appliance?
-- WALL LEVEL: What's above it? A wall cabinet (how many doors? how tall?), a range hood, empty space?
+- WALL LEVEL: What's above it? A wall cabinet (how many doors? how tall?), a range hood, empty space, or a short cabinet above the fridge?
 - Any gaps, filler strips, or transitions between items?
 
 Be very specific about:
 1. How many SEPARATE cabinet boxes you see (look for vertical seams between cabinets)
 2. Where the range hood / vent is (it's a metallic strip — which cabinets is it below?)
 3. Any spaces with NO cabinet (you can see the floor or wall behind)
-4. The refrigerator — where is it, and is there anything above it?
+4. The refrigerator — where is it? Is there a SHORT WALL CABINET above the fridge? (Very common — look carefully, it may be a small 12-15" tall cabinet sitting on top of the fridge area)
 5. For EACH base cabinet: exactly how many doors and how many drawers? A narrow cabinet with 1 door + 1 drawer on top is 15-18". A wider cabinet with 2 doors + 1 drawer is 30-36".
 
 Do NOT output JSON. Just describe what you see in plain English, left to right."""
@@ -217,7 +217,8 @@ Rules:
 - Empty spaces where you can see the floor = appliance_opening (is_appliance=false)
 - Fridges are appliance_opening with appliance_type like "refrigerator_30"
 - Range hoods/vents = wall_gap
-- Empty space above fridge = wall_gap (NOT a hood)
+- Empty space above fridge with NO cabinet = wall_gap (NOT a hood)
+- Short cabinet above fridge = wall cabinet with estimated_height 12 or 15, above_base_ids pointing to the fridge section
 - pixel_proportion: fraction of total base run (base props sum to ~1.0, wall props sum to ~1.0 separately)
 - above_base_ids: which base section(s) each wall section sits directly above
 
@@ -372,7 +373,7 @@ class CabinetMeasurementAssistant:
         known_references: Optional[Dict[str, float]] = None,
     ) -> PhotoAnalysisResult:
         """
-        Analyze kitchen photo, identify every cabinet section,
+        Analyze photo, identify every cabinet section,
         and generate a measurement checklist for the person on-site.
         """
         # Validate and enhance
@@ -394,7 +395,7 @@ class CabinetMeasurementAssistant:
             model="claude-opus-4-6",
             max_tokens=2000,
             temperature=0.0,
-            system="You are a cabinet maker with 20 years experience. Look at this kitchen photo and describe exactly what you see. Be precise about cabinet counts, door counts, and layout.",
+            system="You are a cabinet maker with 20 years experience. Look at this photo and describe exactly what you see. Be precise about cabinet counts, door counts, and layout. Pay special attention to cabinets above the fridge — these are very common and easy to miss.",
             messages=[
                 {"role": "user", "content": [
                     {"type": "image", "source": {
