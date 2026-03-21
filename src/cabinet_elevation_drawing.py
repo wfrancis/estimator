@@ -933,7 +933,7 @@ def generate_wireframe_svg(
     Same inputs as generate_elevation_svg().
     """
     # ── Constants ──
-    SCALE = DrawingConfig.SCALE  # 4 px/in
+    SCALE = 6  # 6 px/in — larger for better visibility
     ISO_ANGLE = math.radians(30)
     COS30 = math.cos(ISO_ANGLE)  # ≈ 0.866
     SIN30 = math.sin(ISO_ANGLE)  # 0.5
@@ -945,16 +945,16 @@ def generate_wireframe_svg(
     WALL_DEPTH = 12.0
     COUNTERTOP_THICK = DrawingConfig.COUNTERTOP_THICKNESS  # 1.5"
     COUNTERTOP_OVERHANG = 1.5  # front overhang in inches
-    BACKSPLASH_GAP = DrawingConfig.BACKSPLASH_HEIGHT  # 18"
+    BACKSPLASH_GAP = 12.0  # reduced from 15" for tighter layout — wall cabs closer to counter
     TOE_KICK_H = DrawingConfig.TOE_KICK_HEIGHT        # 4.5"
     FRIDGE_DEPTH = 30.0
     FRIDGE_HEIGHT = 70.0
 
     # Margins
-    MARGIN_LEFT = 60
-    MARGIN_TOP = 60
-    MARGIN_BOTTOM = 100
-    MARGIN_RIGHT = 120  # room for iso depth projection
+    MARGIN_LEFT = 40
+    MARGIN_TOP = 50
+    MARGIN_BOTTOM = 80
+    MARGIN_RIGHT = 160  # room for iso depth projection
 
     # Isometric offsets (pixels) for base and wall depth
     base_dx = BASE_DEPTH * COS30 * SCALE
@@ -970,13 +970,15 @@ def generate_wireframe_svg(
     FACE_FRONT = "#f8f8f8"
     FACE_TOP = "#e8e8e8"
     FACE_SIDE = "#e0e0e0"
-    STROKE = "#333333"
-    STROKE_THIN = "#555555"
+    STROKE = "#222222"
+    STROKE_W = 1.5  # main stroke width
+    STROKE_THIN = "#444444"
+    STROKE_THIN_W = 0.8  # detail stroke width
     TOE_KICK_FILL = "#888888"
     COUNTERTOP_FILL = "#d4c4b0"
     COUNTERTOP_TOP = "#c8b8a4"
     APPLIANCE_FILL = "#e0e0e0"
-    GRID_COLOR = "#e6e6e6"
+    GRID_COLOR = "#e0e0e0"
     DIM_COLOR = "#666666"
     LABEL_COLOR = "#444444"
 
@@ -1052,12 +1054,11 @@ def generate_wireframe_svg(
     for gy in range(0, int(canvas_h) + 1, grid_spacing):
         svg_parts.append(_line(0, gy, canvas_w, gy, stroke=GRID_COLOR, sw=0.5))
 
-    # ── Title ──
-    svg_parts.append(_text(canvas_w / 2, 30, title, size=16, weight="bold", fill="#222"))
+    # ── Title removed to save vertical space ──
 
     # ── Helper: draw an isometric cabinet box ──
     def draw_iso_box(x, y, w_px, h_px, depth_dx, depth_dy, fill_front, fill_top,
-                     fill_side, show_side=False, stroke_w=1.2):
+                     fill_side, show_side=False, stroke_w=1.8):
         """Draw the three visible faces of an isometric box."""
         parts = []
 
@@ -1085,36 +1086,46 @@ def generate_wireframe_svg(
 
         return parts
 
-    def draw_shaker_door(x, y, w, h, inset=6):
+    def draw_shaker_door(x, y, w, h, inset=None):
         """Draw a shaker-style door panel (outer frame + inner recessed rectangle)."""
+        if inset is None:
+            inset = max(6, min(10, w * 0.08))
         parts = []
         # Outer door frame
-        parts.append(_rect(x, y, w, h, fill=FACE_FRONT, stroke=STROKE, sw=1.0))
-        # Inner panel (inset)
+        parts.append(_rect(x, y, w, h, fill=FACE_FRONT, stroke=STROKE, sw=STROKE_W))
+        # Inner panel (inset) with subtle shadow lines for 3D recessed look
         if w > inset * 2 + 4 and h > inset * 2 + 4:
-            parts.append(_rect(x + inset, y + inset, w - 2 * inset, h - 2 * inset,
-                               fill="#f0f0f0", stroke=STROKE_THIN, sw=0.8))
-        # Handle (small horizontal bar pull on right side, vertically centered)
-        handle_x = x + w - inset - 2
-        handle_y = y + h * 0.45
-        handle_len = min(16, h * 0.12)
+            ix, iy = x + inset, y + inset
+            iw, ih = w - 2 * inset, h - 2 * inset
+            parts.append(_rect(ix, iy, iw, ih,
+                               fill="#ececec", stroke=STROKE_THIN, sw=STROKE_THIN_W))
+            # Shadow line along top inside edge
+            parts.append(_line(ix + 1, iy + 1, ix + iw - 1, iy + 1,
+                              stroke="#ddd", sw=0.8))
+            # Shadow line along left inside edge
+            parts.append(_line(ix + 1, iy + 1, ix + 1, iy + ih - 1,
+                              stroke="#ddd", sw=0.8))
+        # Handle (small vertical bar pull on right side, vertically centered)
+        handle_x = x + w - inset - 3
+        handle_y = y + h * 0.42
+        handle_len = min(20, h * 0.15)
         parts.append(_line(handle_x, handle_y, handle_x, handle_y + handle_len,
-                          stroke="#999", sw=2.0))
+                          stroke="#777", sw=2.5))
         return parts
 
-    def draw_drawer_front(x, y, w, h, inset=5):
+    def draw_drawer_front(x, y, w, h, inset=6):
         """Draw a drawer front with inset panel and centered pull."""
         parts = []
-        parts.append(_rect(x, y, w, h, fill=FACE_FRONT, stroke=STROKE, sw=1.0))
+        parts.append(_rect(x, y, w, h, fill=FACE_FRONT, stroke=STROKE, sw=STROKE_W))
         if w > inset * 2 + 4 and h > inset * 2 + 4:
             parts.append(_rect(x + inset, y + inset, w - 2 * inset, h - 2 * inset,
-                               fill="#f0f0f0", stroke=STROKE_THIN, sw=0.8))
+                               fill="#f0f0f0", stroke=STROKE_THIN, sw=STROKE_THIN_W))
         # Horizontal bar pull centered
-        pull_w = min(24, w * 0.35)
+        pull_w = min(30, w * 0.35)
         pull_x = x + (w - pull_w) / 2
         pull_y = y + h / 2
         parts.append(_line(pull_x, pull_y, pull_x + pull_w, pull_y,
-                          stroke="#999", sw=2.0))
+                          stroke="#777", sw=2.5))
         return parts
 
     # ── Filler lookup ──
@@ -1179,18 +1190,27 @@ def generate_wireframe_svg(
                 svg_parts.append(p)
             # Label
             svg_parts.append(_text(bx + bw / 2, fridge_y + fridge_h_px / 2,
-                                   "FRIDGE", size=11, weight="bold"))
-            svg_parts.append(_text(bx + bw / 2, fridge_y + fridge_h_px / 2 + 14,
-                                   sid, size=8))
+                                   "FRIDGE", size=13, weight="bold"))
+            svg_parts.append(_text(bx + bw / 2, fridge_y + fridge_h_px / 2 + 16,
+                                   sid, size=11))
         elif is_app:
-            # Appliance opening (range, DW, etc): recessed empty area
-            # Draw a slightly inset empty box
+            # Appliance opening (range, DW, etc): recessed look with X pattern
             inset = 4
             svg_parts.append(_rect(bx, base_top_y, bw, base_h_px,
-                                   fill=APPLIANCE_FILL, stroke=STROKE, sw=1.2))
-            svg_parts.append(_rect(bx + inset, base_top_y + inset,
-                                   bw - 2 * inset, base_h_px - 2 * inset,
-                                   fill="#d8d8d8", stroke=STROKE_THIN, sw=0.8))
+                                   fill="#d8d8d8", stroke=STROKE, sw=1.2))
+            inner_x = bx + inset
+            inner_y = base_top_y + inset
+            inner_w = bw - 2 * inset
+            inner_h = base_h_px - 2 * inset
+            svg_parts.append(_rect(inner_x, inner_y, inner_w, inner_h,
+                                   fill="#d0d0d0", stroke=STROKE_THIN, sw=0.8))
+            # X pattern to indicate opening (not a cabinet)
+            svg_parts.append(_line(inner_x, inner_y,
+                                   inner_x + inner_w, inner_y + inner_h,
+                                   stroke="#bbb", sw=0.8, dash="4,3"))
+            svg_parts.append(_line(inner_x + inner_w, inner_y,
+                                   inner_x, inner_y + inner_h,
+                                   stroke="#bbb", sw=0.8, dash="4,3"))
             # Appliance label
             label_map = {
                 "range_30": "RANGE", "range_36": "RANGE",
@@ -1198,9 +1218,9 @@ def generate_wireframe_svg(
             }
             lbl = label_map.get(app_type or "", "APPLIANCE")
             svg_parts.append(_text(bx + bw / 2, base_top_y + base_h_px / 2, lbl,
-                                   size=11, weight="bold"))
-            svg_parts.append(_text(bx + bw / 2, base_top_y + base_h_px / 2 + 14,
-                                   sid, size=8))
+                                   size=13, weight="bold"))
+            svg_parts.append(_text(bx + bw / 2, base_top_y + base_h_px / 2 + 16,
+                                   sid, size=11))
         else:
             # Regular cabinet box with isometric faces
             box_parts = draw_iso_box(
@@ -1248,9 +1268,12 @@ def generate_wireframe_svg(
             usable_h = base_h_px - toe_kick_h_px - panel_gap * 2
 
             if drawer_count > 0 and door_count > 0:
-                # Drawers on top, doors on bottom
-                drawer_total_h = usable_h * 0.25
+                # Drawers on top, doors on bottom (20% of front height, min 15px each)
+                drawer_total_h = usable_h * 0.20
                 each_drawer_h = (drawer_total_h - panel_gap * (drawer_count - 1)) / drawer_count
+                if each_drawer_h < 15:
+                    each_drawer_h = 15
+                    drawer_total_h = each_drawer_h * drawer_count + panel_gap * (drawer_count - 1)
                 door_total_h = usable_h - drawer_total_h - panel_gap
 
                 dy = usable_y
@@ -1276,10 +1299,10 @@ def generate_wireframe_svg(
             # Sink label if applicable
             if is_sink:
                 svg_parts.append(_text(bx + bw / 2, base_top_y + base_h_px / 2,
-                                       "SINK", size=9, fill="#777"))
+                                       "SINK", size=13, weight="bold", fill="#777"))
 
             # Cabinet ID label below toe kick
-            svg_parts.append(_text(bx + bw / 2, floor_y + 14, sid, size=8, fill=LABEL_COLOR))
+            svg_parts.append(_text(bx + bw / 2, floor_y + 14, sid, size=11, fill=LABEL_COLOR))
 
     # ── Draw countertop ──
     # Countertop spans all base cabinets (excluding fridge)
@@ -1291,9 +1314,9 @@ def generate_wireframe_svg(
         ct_w = ct_right - ct_left
         overhang_px = COUNTERTOP_OVERHANG * SCALE
 
-        # Front face of countertop (with overhang)
+        # Front face of countertop (with overhang) — thicker stroke as visual anchor
         svg_parts.append(_rect(ct_left - overhang_px, ct_top_y, ct_w + 2 * overhang_px,
-                               ct_h_px, fill=COUNTERTOP_FILL, stroke=STROKE, sw=1.2))
+                               ct_h_px, fill=COUNTERTOP_FILL, stroke=STROKE, sw=2.0))
 
         # Top face of countertop (parallelogram with overhang)
         ct_pts = [
@@ -1321,7 +1344,7 @@ def generate_wireframe_svg(
             base_x_by_id[sid] = (bx, bw)
 
         wall_x_cursor = MARGIN_LEFT
-        wall_positions: List[Tuple[float, float, float, str]] = []
+        wall_positions: List[Tuple[float, float, float, str, str]] = []
 
         for wi, wsec in enumerate(wall_secs):
             ww_in = wall_width_lookup.get(wsec.section_id, wsec.proportion * total_run)
@@ -1332,11 +1355,28 @@ def generate_wireframe_svg(
                 aligned_x, _ = base_x_by_id[wsec.above_base_ids[0]]
                 wall_x_cursor = aligned_x
 
-            wall_positions.append((wall_x_cursor, ww_px, ww_in, wsec.section_id))
+            wall_positions.append((wall_x_cursor, ww_px, ww_in, wsec.section_id,
+                                   wsec.cabinet_type))
             wall_x_cursor += ww_px
 
         last_wall_idx = len(wall_positions) - 1
-        for widx, (wx, ww, ww_in, wsid) in enumerate(wall_positions):
+        for widx, (wx, ww, ww_in, wsid, wcab_type) in enumerate(wall_positions):
+            if wcab_type == "wall_gap":
+                # Hood gap: empty space with label and bracket line
+                mid_x = wx + ww / 2
+                mid_y = wall_top_y + wall_h_px / 2
+                svg_parts.append(_text(mid_x, mid_y, "HOOD", size=12,
+                                       weight="bold", fill="#999"))
+                # Small horizontal bracket line
+                bracket_w = min(ww * 0.6, 60)
+                bracket_y = mid_y + 16
+                svg_parts.append(_line(mid_x - bracket_w / 2, bracket_y,
+                                       mid_x + bracket_w / 2, bracket_y,
+                                       stroke="#aaa", sw=1.5))
+                svg_parts.append(_text(wx + ww / 2, wall_top_y - 10, wsid, size=11,
+                                       fill=LABEL_COLOR))
+                continue
+
             show_right_wall = (widx == last_wall_idx)
 
             box_parts = draw_iso_box(
@@ -1352,21 +1392,38 @@ def generate_wireframe_svg(
             panel_gap = 3
             w_door_count = 2 if ww_in >= 24 else 1
             each_door_w = (ww - panel_gap * (w_door_count + 1)) / w_door_count
+            wall_door_h = wall_h_px - 2 * panel_gap
+            wall_door_inset = None  # default
+            if wall_door_h < 80:
+                default_inset = max(6, min(10, each_door_w * 0.08))
+                wall_door_inset = max(4, default_inset * 0.7)
             for d in range(w_door_count):
                 dx = wx + panel_gap + d * (each_door_w + panel_gap)
                 for p in draw_shaker_door(dx, wall_top_y + panel_gap,
-                                          each_door_w, wall_h_px - 2 * panel_gap):
+                                          each_door_w, wall_door_h,
+                                          inset=wall_door_inset):
                     svg_parts.append(p)
 
             # Wall cabinet label
-            svg_parts.append(_text(wx + ww / 2, wall_top_y - 10, wsid, size=8,
+            svg_parts.append(_text(wx + ww / 2, wall_top_y - 10, wsid, size=11,
                                    fill=LABEL_COLOR))
+
+    # ── Back wall line (left edge, top of wall cabs to floor) ──
+    svg_parts.append(_line(MARGIN_LEFT, wall_top_y, MARGIN_LEFT, floor_y,
+                           stroke="#ccc", sw=1.0))
+
+    # ── Floor line (spans full width of base cabinets) ──
+    if base_positions:
+        floor_x1 = base_positions[0][0]
+        floor_x2 = base_positions[-1][0] + base_positions[-1][1]
+        svg_parts.append(_line(floor_x1, floor_y, floor_x2, floor_y,
+                               stroke="#999", sw=1.5))
 
     # ── Dimension lines (below base cabinets) ──
     dim_y = floor_y + 35
     dim_total_y = floor_y + 58
 
-    def draw_dimension(x1, x2, y, label, color=DIM_COLOR):
+    def draw_dimension(x1, x2, y, label, color=DIM_COLOR, label_size=12, label_weight="normal"):
         parts = []
         arrow_size = 4
         parts.append(_line(x1, y, x2, y, stroke=color, sw=1.0))
@@ -1381,7 +1438,7 @@ def generate_wireframe_svg(
         parts.append(_line(x2, y - 8, x2, y + 8, stroke=color, sw=0.5))
         # Label
         mid_x = (x1 + x2) / 2
-        parts.append(_text(mid_x, y - 5, label, size=9, fill=color))
+        parts.append(_text(mid_x, y - 5, label, size=label_size, fill=color, weight=label_weight))
         return parts
 
     # Individual cabinet width dimensions
@@ -1395,7 +1452,8 @@ def generate_wireframe_svg(
         run_x1 = base_positions[0][0]
         run_x2 = base_positions[-1][0] + base_positions[-1][1]
         for p in draw_dimension(run_x1, run_x2, dim_total_y,
-                                f'{total_run:.1f}" TOTAL RUN', color="#333"):
+                                f'{total_run:.1f}" TOTAL RUN', color="#333",
+                                label_size=13, label_weight="bold"):
             svg_parts.append(p)
 
     # ── Assemble SVG ──
