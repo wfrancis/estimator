@@ -93,6 +93,78 @@ Goal: 95% visual match between photo and 3D render.
 
 ---
 
+## Iteration 3 — Current Best
+**Date**: 2026-03-20
+**Total Run**: 114"
+
+### Changes Made
+1. Removed sinks from APPLIANCE_WIDTHS (sinks go in variable-width base cabinets)
+2. Wall cabinet positioning: sequential left-to-right instead of overlapping above_base_ids logic
+3. Wall cabinet scaling: total wall width scaled to match base total
+4. Sink base renders as white cabinet with doors (not dark appliance)
+5. Empty appliance openings render as visible floor/wall space
+6. Fridge lighter stainless color (reduced metalness)
+
+### Solved Widths
+| Section | Width | Source | Correct? |
+|---------|-------|--------|----------|
+| base_1 | 18" | solved | Yes |
+| base_2 | 30" | solved | Yes (range opening) |
+| base_3 | 36" | appliance | Width OK but should be "solved" source |
+| base_4 | 30" | appliance | Yes (fridge) |
+| MISSING | ~18-24" | - | Cabinet between sink and fridge not detected |
+
+### AI Evaluation Panel Scores
+| Persona | Score | Key Issue |
+|---------|-------|-----------|
+| Cabinet Maker | 6.0 | Missing cabinet between sink and fridge |
+| Cabinet Designer | 6.5 | Missing cabinet, wall proportions uniform |
+| Project Manager | 7.0 | Can't send to shop with missing cabinet |
+| Software Developer | 7.0 | AI non-determinism, wall solver weak |
+| **Average** | **6.6** | **Below 7.0 threshold — needs re-plan** |
+
+### Root Causes (General)
+1. **AI detection inconsistency**: Same photo, different runs → different cabinet counts. Claude vision analysis is non-deterministic even at temp=0.
+2. **Wall solver not constraining proportions**: All wall cabs get same width after scaling.
+3. **No validation step**: No check that AI-detected cabinet count matches what's physically plausible.
+
+---
+
+## Iteration 4 — Multi-Pass Refinement
+**Date**: 2026-03-20
+**Total Run**: 114"
+
+### Changes Made
+1. **Multi-pass AI refinement**: Up to 5 passes (2 initial + 3 Sonnet refinement). Each pass compares JSON to photo and self-corrects.
+2. **Post-analysis validation**: Splits base cabinets wider than 42" into two.
+3. **Sink rendering**: White cabinet with doors, not dark appliance box.
+4. **Vite proxy timeout**: Increased to 300s for multi-pass.
+
+### Solved Widths
+| Section | Width | Source | Photo Match |
+|---------|-------|--------|-------------|
+| base_1 | 12" | solved | Low — looks 15-18" in photo |
+| base_2 | 30" | solved | Good (range opening) |
+| base_3 | 24" | appliance | Low — looks 30-33" in photo |
+| base_4 | 18" | solved | OK |
+| base_5 | 30" | appliance | Good (fridge) |
+
+### AI Evaluation Panel
+| Persona | Score | Key Issue |
+|---------|-------|-----------|
+| Cabinet Maker | 7.5 | base_1 and base_3 widths off |
+| Cabinet Designer | 7.5 | Wall cab proportions uniform |
+| Project Manager | 8.0 | Good workflow, needs tape verification |
+| Software Developer | 8.0 | Multi-pass architecture solid |
+| **Average** | **7.75** | **Above 7.0 — fix top 3 issues** |
+
+### Remaining Issues (General)
+1. Solver compresses remaining cabinets when appliances take too much space
+2. Wall solver needs proportional sizing
+3. Sink source label shows "appliance" instead of "solved"
+
+---
+
 ## Lessons Learned (Applicable to ALL images)
 
 ### L1: Sink ≠ Fixed Appliance

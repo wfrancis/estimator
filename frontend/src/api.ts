@@ -12,12 +12,16 @@ const API_BASE = '/cabinet';
 
 export async function analyzePhoto(
   photo: File,
-  knownReferences?: Record<string, number>
+  knownReferences?: Record<string, number>,
+  totalRun?: number
 ): Promise<AnalyzeResponse> {
   const formData = new FormData();
   formData.append('photo', photo);
   if (knownReferences) {
     formData.append('known_references', JSON.stringify(knownReferences));
+  }
+  if (totalRun) {
+    formData.append('total_run', totalRun.toString());
   }
 
   const res = await fetch(`${API_BASE}/analyze`, {

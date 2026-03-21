@@ -112,7 +112,7 @@ function FridgeAppliance({ cab, selected, onClick }: {
       {/* Bottom section (fridge) */}
       <mesh position={[cx, bottomH / 2, cz]} onClick={(e) => { e.stopPropagation(); onClick(); }}>
         <boxGeometry args={[cab.width, bottomH, cab.depth]} />
-        <meshStandardMaterial color={selected ? '#fecaca' : '#b8b8b8'} metalness={0.7} roughness={0.25} />
+        <meshStandardMaterial color={selected ? '#fecaca' : '#c8c8c8'} metalness={0.3} roughness={0.4} />
       </mesh>
       <lineSegments position={[cx, bottomH / 2, cz]}>
         <edgesGeometry args={[new THREE.BoxGeometry(cab.width, bottomH, cab.depth)]} />
@@ -122,7 +122,7 @@ function FridgeAppliance({ cab, selected, onClick }: {
       {/* Top section (freezer) */}
       <mesh position={[cx, bottomH + gap + topH / 2, cz]} onClick={(e) => { e.stopPropagation(); onClick(); }}>
         <boxGeometry args={[cab.width, topH, cab.depth]} />
-        <meshStandardMaterial color={selected ? '#fecaca' : '#a8a8a8'} metalness={0.7} roughness={0.25} />
+        <meshStandardMaterial color={selected ? '#fecaca' : '#bbb'} metalness={0.3} roughness={0.4} />
       </mesh>
       <lineSegments position={[cx, bottomH + gap + topH / 2, cz]}>
         <edgesGeometry args={[new THREE.BoxGeometry(cab.width, topH, cab.depth)]} />
@@ -228,14 +228,47 @@ function RangeAppliance({ cab, selected, onClick }: {
   );
 }
 
+function ApplianceOpening({ cab }: { cab: SceneCabinet }) {
+  // Empty opening — just show the space with a subtle floor patch and label
+  const cx = cab.x + cab.width / 2;
+  return (
+    <group>
+      {/* Floor patch */}
+      <mesh position={[cx, 0.05, 12]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[cab.width, 24]} />
+        <meshStandardMaterial color="#b5a896" roughness={0.9} />
+      </mesh>
+      {/* Dashed outline on back wall to show the opening */}
+      <lineSegments position={[cx, cab.height / 2, 0.1]}>
+        <edgesGeometry args={[new THREE.BoxGeometry(cab.width, cab.height, 0.1)]} />
+        <lineBasicMaterial color="#999" />
+      </lineSegments>
+      {/* Label */}
+      <Html position={[cx, 1, 27]} center style={{ pointerEvents: 'none' }}>
+        <div style={{
+          background: 'rgba(255,255,255,0.95)', padding: '2px 6px', borderRadius: 4,
+          fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+          border: `2px solid ${sourceAccent(cab.source)}`, color: '#333',
+        }}>
+          {cab.id}: {cab.width}"
+        </div>
+      </Html>
+    </group>
+  );
+}
+
 function BaseCabinet({ cab, selected, onClick }: {
   cab: SceneCabinet; selected: boolean; onClick: () => void;
 }) {
   // Delegate to specialized appliance renderers
   if (isFridge(cab)) return <FridgeAppliance cab={cab} selected={selected} onClick={onClick} />;
   if (isRange(cab)) return <RangeAppliance cab={cab} selected={selected} onClick={onClick} />;
+  // Empty appliance opening (no appliance present — visible floor/wall)
+  if (cab.type === 'appliance_opening' && !cab.is_appliance) return <ApplianceOpening cab={cab} />;
 
-  const color = cab.is_appliance ? APPLIANCE_STEEL : CABINET_WHITE;
+  // Sinks are in regular cabinets — only true appliances (DW, etc.) get steel color
+  const isSink = (cab.appliance_type || '').toLowerCase().includes('sink');
+  const color = (cab.is_appliance && !isSink) ? APPLIANCE_STEEL : CABINET_WHITE;
   const toeKick = 4.5;
   const bodyH = cab.height - toeKick;
 
@@ -269,8 +302,8 @@ function BaseCabinet({ cab, selected, onClick }: {
         <lineBasicMaterial color={selected ? '#ef4444' : CABINET_EDGE} />
       </lineSegments>
 
-      {/* Door/drawer panels */}
-      {!cab.is_appliance && (
+      {/* Door/drawer panels (sinks get doors too — they're in regular cabinets) */}
+      {(!cab.is_appliance || isSink) && (
         <group position={[cx, cy, cz]}>
           <DoorPanels
             width={cab.width}
@@ -282,8 +315,8 @@ function BaseCabinet({ cab, selected, onClick }: {
         </group>
       )}
 
-      {/* Generic appliance front face */}
-      {cab.is_appliance && (
+      {/* Generic appliance front face (not for sinks — those are regular cabinets) */}
+      {cab.is_appliance && !isSink && (
         <mesh position={[cx, cy, cz + cab.depth / 2 + 0.05]}>
           <planeGeometry args={[cab.width - 1, bodyH - 1]} />
           <meshStandardMaterial color="#707070" metalness={0.6} roughness={0.3} side={THREE.DoubleSide} />

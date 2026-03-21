@@ -184,41 +184,73 @@ class MeasurementReport(BaseModel):
 
 # ===== TWO-PASS PROMPTS =====
 
-PASS1_OBSERVE_PROMPT = """Look at this photo carefully. Describe EXACTLY what you see, as if you're a cabinet maker standing in front of these cabinets.
+PASS1_OBSERVE_PROMPT = """Look at this photo carefully. You are a cabinet maker standing in front of these cabinets. Describe EXACTLY what you see.
 
-Go left to right across the photo. For each position, describe:
-- BASE LEVEL: What's there? A cabinet (how many doors? drawers on top?), an empty space (can you see the floor/wall behind?), an appliance?
-- WALL LEVEL: What's above it? A wall cabinet (how many doors? how tall?), a range hood, empty space, or a short cabinet above the fridge?
-- Any gaps, filler strips, or transitions between items?
+IMPORTANT: Only describe cabinets on the MAIN WALL RUN (continuous wall). If there are cabinets on a return wall or island, note them separately but DO NOT include them in the main run count.
+
+Go left to right across the MAIN WALL. For EACH cabinet box:
+- BASE LEVEL: What's there? Cabinet (doors? drawers?), appliance opening, or empty space?
+- WALL LEVEL: What's above it? Wall cabinet, range hood, gap, or short cabinet above fridge?
+
+APPLIANCE IDENTIFICATION:
+- If you see a range hood/vent above an opening → it's a RANGE opening (typically 30")
+- If you see a range hood bracket/rail but no hood → it's still a RANGE opening
+- A dishwasher opening is ALWAYS next to a sink, never alone
+- Identify: is this a stove/range space, or a dishwasher space? Look for context clues.
+
+WIDTH ESTIMATION RULES — use door/drawer count:
+- 1 door + 0 drawers = 12-15" wide
+- 1 door + 1 drawer on top = 15-18" wide
+- 2 doors + 0 drawers = 24-30" wide
+- 2 doors + 1 drawer on top = 27-33" wide (sink base is typically 30-36")
+- Standard fridge opening = 30-36"
+- Standard range/stove opening = 30"
+- Standard dishwasher = 24"
+
+PROPORTION CHECK: Use appliances as your ruler. If a cabinet appears HALF as wide as the fridge (30"), it's about 15".
 
 Be very specific about:
-1. How many SEPARATE cabinet boxes you see (look for vertical seams between cabinets)
-2. Where the range hood / vent is (it's a metallic strip — which cabinets is it below?)
-3. Any spaces with NO cabinet (you can see the floor or wall behind)
-4. The refrigerator — where is it? Is there a SHORT WALL CABINET above the fridge? (Very common — look carefully, it may be a small 12-15" tall cabinet sitting on top of the fridge area)
-5. For EACH base cabinet: exactly how many doors and how many drawers? A narrow cabinet with 1 door + 1 drawer on top is 15-18". A wider cabinet with 2 doors + 1 drawer is 30-36".
+1. How many SEPARATE cabinet boxes on the main wall (look for vertical seams)
+2. EXACT door and drawer count per cabinet — this determines width
+3. Range hood / vent location — this identifies the range opening
+4. Fridge location and whether there's a short cabinet above it
+5. Which cabinets look the SAME width as each other
 
-Do NOT output JSON. Just describe what you see in plain English, left to right."""
+Do NOT output JSON. Plain English, left to right."""
 
 
-PASS2_STRUCTURE_PROMPT = """Based on your observation of this kitchen photo, convert your description into structured cabinet data.
+PASS2_STRUCTURE_PROMPT = """Based on your observation of this photo, convert your description into structured cabinet data.
 
 YOUR OBSERVATION:
 {observation}
 
-Standard cabinet widths (factory sizes): 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 42, 48 inches.
+CRITICAL WIDTH RULES — use door/drawer count to determine width:
+- 1 door, 0 drawers → 12" or 15"
+- 1 door, 1 drawer → 15" or 18"
+- 2 doors, 0 drawers → 24" or 27"
+- 2 doors, 1 drawer → 30" or 33" (sink base = 30" or 36")
+- Fridge opening → 30" or 36"
+- Range/stove opening → 30"
+- Dishwasher → 24"
+
+Standard factory widths: 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 42, 48 inches.
 Standard wall cabinet heights: 12, 15, 18, 24, 30, 36, 42 inches.
 
+CRITICAL CONSTRAINT: {total_run_context}
+
+PROPORTION SANITY CHECK before you return the JSON:
+- Sum all base estimated_widths. They MUST sum to approximately the total wall run.
+- If your estimates sum to more than the total run, REDUCE the wider cabinets first.
+- A 1-door cabinet should be roughly HALF the width of a 2-door cabinet next to it
+- If you listed a fridge at 30" and a cabinet next to it looks half as wide, that cabinet is ~15"
+
 Rules:
-- TRUST YOUR OBSERVATION. If you described separate cabinet boxes in your observation, keep them as separate sections in the JSON. Do NOT merge two single-door cabinets into one two-door cabinet.
+- TRUST YOUR OBSERVATION — keep separate boxes as separate sections
 - List ALL base sections first (left to right), then ALL wall sections (left to right)
-- A single-door base cabinet with one drawer is usually 15" or 18"
-- A two-door sink base is usually 30" or 36"
-- Empty spaces where you can see the floor = appliance_opening (is_appliance=false)
-- Fridges are appliance_opening with appliance_type like "refrigerator_30"
+- Fridges = appliance_opening with appliance_type "refrigerator_30" or "refrigerator_36"
 - Range hoods/vents = wall_gap
-- Empty space above fridge with NO cabinet = wall_gap (NOT a hood)
-- Short cabinet above fridge = wall cabinet with estimated_height 12 or 15, above_base_ids pointing to the fridge section
+- Empty space above fridge with NO cabinet = wall_gap
+- Short cabinet above fridge = wall cabinet with estimated_height 12 or 15
 - pixel_proportion: fraction of total base run (base props sum to ~1.0, wall props sum to ~1.0 separately)
 - above_base_ids: which base section(s) each wall section sits directly above
 
@@ -263,6 +295,39 @@ Return JSON:
   "photo_quality_notes": [],
   "suggested_additional_photos": []
 }}"""
+
+
+REFINE_PROMPT = """This is refinement pass {pass_number}. You are reviewing your own cabinet analysis against the actual photo.
+
+YOUR CURRENT ANALYSIS (as JSON):
+{current_json}
+
+{reference_context}
+
+LOOK AT THE PHOTO AGAIN CAREFULLY and check your analysis for these common errors:
+
+1. **Missing cabinets**: Count every separate cabinet box in the photo. Look for vertical seams between cabinets. Did you miss any? Especially check:
+   - Narrow cabinets (9-15") that are easy to overlook
+   - Cabinets between the sink and fridge
+   - Short cabinets above the fridge
+   - Cabinets at the far left or right that might be partially cut off
+
+2. **Merged cabinets**: Did you accidentally combine two separate cabinet boxes into one wide section? A base cabinet wider than 36" is usually two separate cabinets. Look at the door seams.
+
+3. **Wrong widths**: Compare the relative widths in the photo. If cabinet A looks 2x wider than cabinet B, do your estimated_widths reflect that ratio?
+
+4. **Wrong types**: Is the range/stove opening marked as appliance_opening? Is the fridge marked with appliance_type containing "refrigerator"? Is a sink base marked with "sink"?
+
+5. **Door/drawer counts**: Re-count doors and drawers for each cabinet by looking at the photo carefully.
+
+6. **Confidence**: Increase confidence for sections you're now more sure about. Set confidence >= 0.95 for sections you're certain about.
+
+Return the COMPLETE corrected JSON in the same format. If everything looks correct, return the same JSON with higher confidence values.
+
+Standard cabinet widths: 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 42, 48 inches.
+Standard wall cabinet heights: 12, 15, 18, 24, 30, 36, 42 inches.
+
+Return ONLY valid JSON, no other text."""
 
 
 CROSS_VALIDATION_PROMPT = """You are a cabinet measurement expert reviewing measurements for accuracy.
@@ -371,6 +436,7 @@ class CabinetMeasurementAssistant:
         self,
         photo_bytes: bytes,
         known_references: Optional[Dict[str, float]] = None,
+        total_run: Optional[float] = None,
     ) -> PhotoAnalysisResult:
         """
         Analyze photo, identify every cabinet section,
@@ -390,7 +456,7 @@ class CabinetMeasurementAssistant:
             reference_context = "\n".join(lines)
 
         # ===== PASS 1: OBSERVE — describe what you see in plain English =====
-        logger.info("Pass 1: Observing kitchen photo...")
+        logger.info("Pass 1: Observing photo...")
         pass1_response = await self.anthropic_client.messages.create(
             model="claude-opus-4-6",
             max_tokens=2000,
@@ -412,9 +478,18 @@ class CabinetMeasurementAssistant:
 
         # ===== PASS 2: STRUCTURE — convert observation to JSON =====
         logger.info("Pass 2: Structuring observation into JSON...")
+        if total_run:
+            total_run_context = (
+                f"The total wall run is {total_run} inches. "
+                f"All base cabinet estimated_widths MUST sum to approximately {total_run} inches. "
+                f"Adjust your width estimates so they add up correctly."
+            )
+        else:
+            total_run_context = "The total wall run is unknown. Estimate each width based on door/drawer count."
         prompt = PASS2_STRUCTURE_PROMPT.format(
             observation=observation,
             reference_context=reference_context,
+            total_run_context=total_run_context,
         )
 
         pass2_response = await self.anthropic_client.messages.create(
@@ -435,7 +510,13 @@ class CabinetMeasurementAssistant:
         )
 
         data = self._extract_json(pass2_response.content[0].text)
-        return PhotoAnalysisResult(**data)
+        result = PhotoAnalysisResult(**data)
+
+        # No refinement passes — they just inflate confidence without fixing proportions.
+        # Opus 2-pass (observe + structure) is sufficient. Accuracy comes from
+        # better prompts and solver logic, not repeated LLM calls.
+
+        return result
 
     def generate_measurement_checklist(self, analysis: PhotoAnalysisResult) -> Dict[str, Any]:
         """

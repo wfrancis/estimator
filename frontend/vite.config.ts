@@ -8,7 +8,7 @@ export default defineConfig({
     proxy: {
       '/cabinet': {
         target: 'http://127.0.0.1:8000',
-        timeout: 120000,
+        timeout: 300000,
       },
       '/test-image': {
         target: 'http://127.0.0.1:8000',

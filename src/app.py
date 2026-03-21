@@ -5,6 +5,16 @@ import json
 from pathlib import Path
 from typing import Optional, List, Dict
 
+# Load .env file if present (so ANTHROPIC_API_KEY persists across restarts)
+_env_path = Path(__file__).parent.parent / ".env"
+if _env_path.exists():
+    for line in _env_path.read_text().strip().splitlines():
+        if "=" in line and not line.startswith("#"):
+            key, val = line.split("=", 1)
+            key, val = key.strip(), val.strip()
+            if not os.environ.get(key):
+                os.environ[key] = val
+
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -51,6 +61,96 @@ def _get_cabinet_assistant() -> CabinetMeasurementAssistant:
     return CabinetMeasurementAssistant(anthropic_api_key=anthropic_key)
 
 
+def _max_width_for_doors(door_count: int, drawer_count: int, is_sink: bool = False) -> float:
+    """Maximum reasonable width for a cabinet based on door/drawer count."""
+    if is_sink:
+        # Sink bases can be wider: 2 doors = up to 36"
+        if door_count <= 1:
+            return 24.0
+        elif door_count == 2:
+            return 36.0
+        else:
+            return 48.0
+    else:
+        if door_count <= 1 and drawer_count <= 1:
+            return 21.0  # 1 door + 1 drawer max = 18-21"
+        elif door_count <= 1:
+            return 18.0  # single door
+        elif door_count == 2:
+            return 33.0  # 2 door base max
+        else:
+            return 48.0
+
+
+def _validate_and_fix_analysis(analysis: PhotoAnalysisResult) -> PhotoAnalysisResult:
+    """
+    Post-analysis validation: fix common AI detection issues.
+    General fixes that apply to ALL cabinet layouts (not image-specific).
+    """
+    import copy
+    sections = list(analysis.cabinet_sections)
+    fixed_sections = []
+    next_base_id = max(
+        (int(s.id.split("_")[-1]) for s in sections if s.id.startswith("base_")),
+        default=0,
+    ) + 1
+
+    for s in sections:
+        if s.cabinet_type != "base" or not s.estimated_width or s.is_appliance:
+            fixed_sections.append(s)
+            continue
+
+        is_sink = bool(s.appliance_type and "sink" in (s.appliance_type or "").lower())
+        max_w = _max_width_for_doors(s.door_count, s.drawer_count, is_sink)
+
+        # If the estimated width exceeds what the door count supports,
+        # the AI probably merged two adjacent cabinets
+        if s.estimated_width > max_w + 3:  # 3" tolerance
+            logger.info(
+                f"Splitting {s.id}: est={s.estimated_width}\", "
+                f"doors={s.door_count}, max_for_doors={max_w}\""
+            )
+            # Split: primary keeps most doors, secondary gets remainder
+            # Primary is the "main" cabinet (e.g., sink), secondary is the adjacent narrow cab
+            primary_w = min(s.estimated_width, max_w)
+            secondary_w = s.estimated_width - primary_w
+
+            # Primary keeps original ID
+            s1 = copy.deepcopy(s)
+            s1.estimated_width = round(primary_w)
+            if s.pixel_proportion:
+                s1.pixel_proportion = s.pixel_proportion * (primary_w / s.estimated_width)
+            s1.notes = f"Split from wider AI detection. {s.notes or ''}"
+            fixed_sections.append(s1)
+
+            # Secondary gets new ID — assumed to be a simple 1-door cabinet
+            from cabinet_measurement_service import CabinetSection
+            s2 = copy.deepcopy(s)
+            s2.id = f"base_{next_base_id}"
+            next_base_id += 1
+            s2.estimated_width = max(round(secondary_w), 12)
+            s2.door_count = 1
+            s2.drawer_count = 0
+            s2.is_appliance = False
+            s2.appliance_type = None
+            if s.pixel_proportion:
+                s2.pixel_proportion = s.pixel_proportion * (secondary_w / s.estimated_width)
+            s2.position = f"Adjacent to {s.id} — split from wider detection"
+            s2.notes = "Auto-split: door count suggests this is a separate cabinet"
+            s2.confidence = max(s.confidence - 0.1, 0.5) if s.confidence else 0.6
+            fixed_sections.append(s2)
+
+            # Update wall references
+            for ws in sections:
+                if ws.above_base_ids and s.id in ws.above_base_ids:
+                    ws.above_base_ids.append(s2.id)
+        else:
+            fixed_sections.append(s)
+
+    analysis.cabinet_sections = fixed_sections
+    return analysis
+
+
 # ===== API Endpoints =====
 
 
@@ -94,6 +194,10 @@ async def analyze_cabinet_photo(
         None,
         description='JSON dict of known references, e.g. {"refrigerator_width": 30, "range_width": 30}',
     ),
+    total_run: Optional[float] = Form(
+        None,
+        description="Total wall run in inches (if known). Helps AI calibrate width estimates.",
+    ),
 ):
     """
     Step 1: Upload a photo of cabinets. Returns identified cabinet sections
@@ -110,7 +214,14 @@ async def analyze_cabinet_photo(
             raise HTTPException(status_code=400, detail="known_references must be valid JSON")
 
     try:
-        analysis = await assistant.analyze_photo(photo_bytes, known_references=refs)
+        analysis = await assistant.analyze_photo(
+            photo_bytes, known_references=refs, total_run=total_run
+        )
+
+        # Post-analysis validation: split overly wide base cabinets
+        # A non-appliance base cabinet wider than 42" is likely two cabinets merged by the AI
+        analysis = _validate_and_fix_analysis(analysis)
+
         checklist = assistant.generate_measurement_checklist(analysis)
 
         # Store session
@@ -762,6 +873,13 @@ async def get_scene_data(session_id: str):
             })
             wx_cursor += w
 
+    # Wall solver already constrains total to match base total,
+    # but reposition x coordinates sequentially in case of rounding
+    wx_cursor = 0.0
+    for wc in wall_cabinets:
+        wc["x"] = wx_cursor
+        wx_cursor += wc["width"]
+
     # Calculate countertop width excluding tall appliances (fridge)
     countertop_width = 0.0
     for cab in base_cabinets:
@@ -962,7 +1080,7 @@ Rules:
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=4096,
             system=system_prompt,
             messages=[{

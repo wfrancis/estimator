@@ -132,23 +132,37 @@ class CabinetWidthSolver:
         """
         known = known_measurements or {}
 
-        # Step 1: Lock in appliances and known measurements
+        # Step 1: Lock in known measurements and appliances
         locked = {}
         ambiguous_appliances = {}  # section_id -> list of possible widths
         for s in sections:
             if s.section_id in known:
                 locked[s.section_id] = known[s.section_id]
             elif s.is_appliance and s.appliance_type:
+                # Use AI's estimated width for the opening, NOT hardcoded appliance sizes.
+                # The AI sees the actual space; hardcoded sizes cause over-allocation
+                # when openings are non-standard.
+                ai_est = s.raw_pixel_width if s.raw_pixel_width > 0 else None
                 appliance_width = APPLIANCE_WIDTHS.get(s.appliance_type)
-                if appliance_width:
+                if ai_est and appliance_width:
+                    # Use AI estimate if it's within 6" of standard, else use standard
+                    if abs(ai_est - appliance_width) <= 6:
+                        locked[s.section_id] = self._nearest_standard(ai_est)
+                    else:
+                        locked[s.section_id] = appliance_width
+                elif appliance_width:
                     locked[s.section_id] = appliance_width
-                    # For fridges, also consider adjacent standard sizes
-                    if "refrigerator" in (s.appliance_type or ""):
-                        ambiguous_appliances[s.section_id] = [30.0, 33.0, 36.0]
+                elif ai_est:
+                    locked[s.section_id] = self._nearest_standard(ai_est)
+                # For fridges, also consider adjacent standard sizes
+                if "refrigerator" in (s.appliance_type or ""):
+                    ambiguous_appliances[s.section_id] = [30.0, 33.0, 36.0]
             elif s.cabinet_type == "appliance_opening" and not s.is_appliance:
-                # Empty appliance opening — use AI's estimated width (range=30, DW=24, etc.)
+                # Empty appliance opening — use AI's estimated width
                 raw_est = s.raw_pixel_width if s.raw_pixel_width > 0 else 24.0
                 locked[s.section_id] = self._nearest_standard(raw_est)
+
+        logger.info(f"Solver: total_run={total_run}, locked={locked}")
 
         # Step 2: Calculate remaining run for unsolved cabinets
         locked_sum = sum(locked.values())
@@ -161,16 +175,32 @@ class CabinetWidthSolver:
             # Everything is locked — just calculate fillers
             return self._build_result(sections, locked, total_run, groups, known)
 
-        # Step 3: Calculate proportions for unsolved sections
-        total_unsolved_proportion = sum(s.proportion for s in unsolved)
-        if total_unsolved_proportion <= 0:
-            total_unsolved_proportion = 1.0
-
-        # Raw estimates based on proportions of remaining run
+        # Step 3: Calculate raw estimates for unsolved sections
+        # Scale unsolved cabinets proportionally within the REMAINING run.
+        # The AI's inch estimates are used as relative proportions among unsolved cabs only.
         raw_estimates = {}
-        for s in unsolved:
-            normalized_prop = s.proportion / total_unsolved_proportion
-            raw_estimates[s.section_id] = normalized_prop * remaining_run
+        total_ai_est_unsolved = sum(s.raw_pixel_width for s in unsolved if s.raw_pixel_width > 0)
+
+        if total_ai_est_unsolved > 0:
+            for s in unsolved:
+                if s.raw_pixel_width > 0:
+                    raw_estimates[s.section_id] = (s.raw_pixel_width / total_ai_est_unsolved) * remaining_run
+                else:
+                    raw_estimates[s.section_id] = remaining_run / len(unsolved)
+        else:
+            # Fallback: use pixel proportions
+            total_unsolved_proportion = sum(s.proportion for s in unsolved)
+            if total_unsolved_proportion <= 0:
+                total_unsolved_proportion = 1.0
+            for s in unsolved:
+                normalized_prop = s.proportion / total_unsolved_proportion
+                raw_estimates[s.section_id] = normalized_prop * remaining_run
+
+        logger.info(f"Solver: remaining_run={remaining_run}, unsolved={list(raw_estimates.keys())}")
+        for sid, est in raw_estimates.items():
+            s_obj = next((s for s in unsolved if s.section_id == sid), None)
+            ai_est = s_obj.raw_pixel_width if s_obj else 0
+            logger.info(f"  {sid}: AI_est={ai_est}, scaled={est:.1f}")
 
         # Step 4: Apply group constraints (same-size cabinets get same estimate)
         if groups:
@@ -275,15 +305,23 @@ class CabinetWidthSolver:
         Strategy: for each cabinet, consider the 2-3 nearest standard sizes,
         then find combinations that sum closest to remaining_run.
         """
-        # Get candidate standard sizes for each cabinet (top 3 nearest)
+        # Get candidate standard sizes for each cabinet
+        # Include nearest to both the scaled estimate AND the AI's original estimate
         candidates = {}
+        ai_est_lookup = {s.section_id: s.raw_pixel_width for s in unsolved if s.raw_pixel_width > 0}
         for sid, est in raw_estimates.items():
             cabinet_type = "base"
             for s in unsolved:
                 if s.section_id == sid:
                     cabinet_type = s.cabinet_type
                     break
-            candidates[sid] = self._nearest_standards(est, n=3, cabinet_type=cabinet_type)
+            # Top 3 nearest to the scaled estimate
+            cands = set(self._nearest_standards(est, n=3, cabinet_type=cabinet_type))
+            # Also include nearest to the AI's original estimate (before scaling)
+            ai_orig = ai_est_lookup.get(sid)
+            if ai_orig and ai_orig > 0 and abs(ai_orig - est) > 3:
+                cands.update(self._nearest_standards(ai_orig, n=2, cabinet_type=cabinet_type))
+            candidates[sid] = sorted(cands)
 
         section_ids = list(candidates.keys())
 
@@ -328,7 +366,6 @@ class CabinetWidthSolver:
 
             # 5. Symmetry bonus — prefer giving similar-proportion cabinets the same width
             symmetry_bonus = 0.0
-            width_values = list(widths.values())
             for i, (sid_a, w_a) in enumerate(widths.items()):
                 for sid_b, w_b in list(widths.items())[i+1:]:
                     est_a = raw_estimates.get(sid_a, 0)
@@ -338,10 +375,27 @@ class CabinetWidthSolver:
                         if ratio > 0.85 and w_a == w_b:  # similar proportions + same width
                             symmetry_bonus += 0.05
 
+            # 6. AI original estimate closeness — how close are standard sizes to
+            # the AI's original inch estimates (before compression to fit remaining_run)?
+            # This is important when AI estimates sum > remaining_run, causing compression.
+            ai_est_score = 0.5  # default neutral
+            ai_est_lookup = {s.section_id: s.raw_pixel_width for s in unsolved if s.raw_pixel_width > 0}
+            if ai_est_lookup:
+                ai_errors = []
+                for sid, standard in widths.items():
+                    ai_est = ai_est_lookup.get(sid)
+                    if ai_est and ai_est > 0:
+                        rel_err = abs(standard - ai_est) / ai_est
+                        ai_errors.append(rel_err)
+                if ai_errors:
+                    avg_ai_err = sum(ai_errors) / len(ai_errors)
+                    ai_est_score = max(0, 1.0 - avg_ai_err * 2)  # 50% error → score 0
+
             # Weighted total
             score = (
-                proportion_score * 0.45
-                + filler_score * 0.25
+                proportion_score * 0.30
+                + ai_est_score * 0.20
+                + filler_score * 0.20
                 + frequency_score * 0.15
                 + exact_match_bonus * 0.10
                 + symmetry_bonus * 0.05
@@ -416,7 +470,13 @@ class CabinetWidthSolver:
             if s.section_id in measured:
                 source = "measured"
             elif s.is_appliance:
-                source = "appliance"
+                # Sinks are marked is_appliance but have variable widths (not locked),
+                # so they should be "solved" not "appliance"
+                atype = (s.appliance_type or "").lower()
+                if "sink" in atype:
+                    source = "solved"
+                else:
+                    source = "appliance"
 
             # Determine confidence
             # The solver CHOSE this width as the optimal solution, so base confidence is high
@@ -526,64 +586,73 @@ class CabinetWidthSolver:
         base_sections: List[SectionEstimate],
     ) -> SolverResult:
         """
-        Solve wall cabinet widths by aligning them to the base cabinets below.
+        Solve wall cabinet widths constrained to sum to the base total.
 
-        Wall cabinets are positioned above specific base cabinets (via above_base_ids).
-        Their widths are constrained by the base cabinets they sit above and snapped
-        to standard wall widths.
+        Uses AI estimated widths as proportional guides, then finds the best
+        combination of standard wall sizes that sums to the base cabinet total.
+        Gaps (e.g. range hood) are locked first, then remaining wall cabs are solved.
         """
-        # Build a lookup: base_id -> solved_width
-        base_width_lookup = {}
-        for cw in base_solver_result.cabinet_widths:
-            base_width_lookup[cw.section_id] = cw.standard_width
+        # Base total is our target for wall cabinets
+        base_total = sum(cw.standard_width for cw in base_solver_result.cabinet_widths)
+        base_width_lookup = {cw.section_id: cw.standard_width for cw in base_solver_result.cabinet_widths}
 
-        solved_widths = []
+        # Step 1: Lock gaps (range hood gaps match base width below)
+        locked = {}
         for ws in wall_sections:
             if ws.cabinet_type == "wall_gap":
-                # Gap width = sum of base cabinets below
                 gap_width = 0
                 if ws.above_base_ids:
                     gap_width = sum(base_width_lookup.get(bid, 0) for bid in ws.above_base_ids)
                 if gap_width <= 0:
-                    gap_width = ws.raw_pixel_width or 30  # fallback
-                solved_widths.append(CabinetWidth(
-                    section_id=ws.section_id,
-                    standard_width=int(round(gap_width)),
-                    confidence=0.8,
-                    source="gap",
-                    alternatives=[],
-                    is_appliance=False,
-                ))
-            else:
-                # Wall cabinet: snap to nearest standard wall width
-                # Use the AI's estimated width as primary guide, NOT the base span.
-                # The base span is only for gaps — a wall cabinet is its own box
-                # and can be narrower than the bases it sits above.
-                if ws.raw_pixel_width > 0:
-                    est_width = ws.raw_pixel_width
-                elif ws.above_base_ids and len(ws.above_base_ids) == 1:
-                    # Single base below — wall cabinet is likely same width
-                    est_width = base_width_lookup.get(ws.above_base_ids[0], 24)
-                else:
-                    est_width = 24  # fallback
+                    gap_width = ws.raw_pixel_width or 30
+                locked[ws.section_id] = int(round(gap_width))
 
-                # Snap to nearest standard wall width
-                nearest = self._nearest_standard(est_width, cabinet_type="wall")
-                solved_widths.append(CabinetWidth(
-                    section_id=ws.section_id,
-                    standard_width=nearest,
-                    confidence=0.6 if not ws.above_base_ids else 0.75,
-                    source="solved",
-                    alternatives=self._get_alternatives(est_width, cabinet_type="wall"),
-                    is_appliance=False,
-                ))
+        # Step 2: Solve remaining wall cabinets proportionally
+        remaining = base_total - sum(locked.values())
+        unsolved_walls = [ws for ws in wall_sections if ws.section_id not in locked]
+
+        if unsolved_walls and remaining > 0:
+            # Use AI estimates to calculate proportions
+            total_ai_est = sum(ws.raw_pixel_width for ws in unsolved_walls if ws.raw_pixel_width > 0)
+            raw_estimates = {}
+            for ws in unsolved_walls:
+                if total_ai_est > 0 and ws.raw_pixel_width > 0:
+                    raw_estimates[ws.section_id] = (ws.raw_pixel_width / total_ai_est) * remaining
+                else:
+                    raw_estimates[ws.section_id] = remaining / len(unsolved_walls)
+
+            # Find best standard-size combination
+            solutions = self._find_solutions(raw_estimates, remaining, unsolved_walls)
+            if solutions:
+                for sid, width in solutions[0]["widths"].items():
+                    locked[sid] = width
+            else:
+                # Fallback: snap individually
+                for sid, est in raw_estimates.items():
+                    locked[sid] = self._nearest_standard(est, cabinet_type="wall")
+
+        # Build result in original order
+        solved_widths = []
+        for ws in wall_sections:
+            width = locked.get(ws.section_id)
+            if width is None:
+                continue
+            is_gap = ws.cabinet_type == "wall_gap"
+            solved_widths.append(CabinetWidth(
+                section_id=ws.section_id,
+                standard_width=int(width),
+                confidence=0.8 if is_gap else 0.75,
+                source="gap" if is_gap else "solved",
+                alternatives=[] if is_gap else self._get_alternatives(ws.raw_pixel_width or width, cabinet_type="wall"),
+                is_appliance=False,
+            ))
 
         return SolverResult(
             cabinet_widths=solved_widths,
             fillers=[],
             total_matches=True,
             residual=0,
-            confidence=0.7,
+            confidence=0.75,
             needs_user_input=None,
             disambiguation_reason=None,
         )

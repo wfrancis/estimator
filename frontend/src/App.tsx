@@ -32,12 +32,12 @@ export default function App() {
     setLoading(true);
     setError(null);
     try {
-      // Step 1: Analyze photo
-      const data = await analyzePhoto(file, refs);
+      // Step 1: Analyze photo (pass total_run so AI can calibrate estimates)
+      const run = refs?.total_run || totalRun;
+      const data = await analyzePhoto(file, refs, run || undefined);
       setSessionId(data.session_id);
 
-      // Step 2: Solve with the total run (passed via refs or default estimate)
-      const run = refs?.total_run || totalRun;
+      // Step 2: Solve with the total run
       if (!run || run <= 0) {
         // If no total run yet, still go to 3D with estimates
         // We'll use the AI's estimated total as a starting point
