@@ -1,8 +1,10 @@
 fastapi>=0.95
 uvicorn>=0.20
 pydantic>=2.0
-openai>=1.0
+google-genai>=1.0
 pillow>=10.0
 numpy
 jinja2
 python-multipart
+ezdxf>=1.0
+anthropic>=1.0

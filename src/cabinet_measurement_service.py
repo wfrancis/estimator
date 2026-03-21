@@ -15,7 +15,8 @@ from typing import Dict, List, Optional, Tuple, Any
 
 import numpy as np
 from PIL import Image, ImageEnhance, ImageOps
-import anthropic
+from google import genai
+from google.genai import types
 from pydantic import BaseModel, Field, field_validator
 
 logging.basicConfig(level=logging.INFO)
@@ -141,7 +142,7 @@ class ReferenceObject(BaseModel):
 
 
 class PhotoAnalysisResult(BaseModel):
-    """Complete analysis of a kitchen photo."""
+    """Complete analysis of a cabinet photo."""
     cabinet_sections: List[CabinetSection]
     reference_objects: List[ReferenceObject]
     layout_description: str
@@ -425,8 +426,8 @@ class CabinetMeasurementAssistant:
     """
 
     def __init__(self, openai_api_key: str = "", anthropic_api_key: str = ""):
-        self.anthropic_client = anthropic.AsyncAnthropic(
-            api_key=anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        self.genai_client = genai.Client(
+            api_key=os.environ.get("GOOGLE_API_KEY", "")
         )
         self.standards = KitchenStandards()
 
@@ -437,14 +438,13 @@ class CabinetMeasurementAssistant:
         photo_bytes: bytes,
         known_references: Optional[Dict[str, float]] = None,
         total_run: Optional[float] = None,
-    ) -> PhotoAnalysisResult:
+    ) -> Tuple[PhotoAnalysisResult, Optional[bytes]]:
         """
         Analyze photo, identify every cabinet section,
         and generate a measurement checklist for the person on-site.
         """
         # Validate and enhance
         photo_bytes = self._enhance_photo(photo_bytes)
-        base64_image = base64.b64encode(photo_bytes).decode("utf-8")
         media_type = self._detect_media_type(photo_bytes)
 
         # Build reference context
@@ -457,23 +457,17 @@ class CabinetMeasurementAssistant:
 
         # ===== PASS 1: OBSERVE — describe what you see in plain English =====
         logger.info("Pass 1: Observing photo...")
-        pass1_response = await self.anthropic_client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=2000,
-            temperature=0.0,
-            system="You are a cabinet maker with 20 years experience. Look at this photo and describe exactly what you see. Be precise about cabinet counts, door counts, and layout. Pay special attention to cabinets above the fridge — these are very common and easy to miss.",
-            messages=[
-                {"role": "user", "content": [
-                    {"type": "image", "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": base64_image,
-                    }},
-                    {"type": "text", "text": PASS1_OBSERVE_PROMPT},
-                ]},
+        pass1_response = self.genai_client.models.generate_content(
+            model='gemini-3.1-flash-image-preview',
+            contents=[
+                types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
+                PASS1_OBSERVE_PROMPT,
             ],
+            config=types.GenerateContentConfig(
+                system_instruction="You are a cabinet maker with 20 years experience. Look at this photo and describe exactly what you see. Be precise about cabinet counts, door counts, and layout. Pay special attention to cabinets above the fridge — these are very common and easy to miss.",
+            ),
         )
-        observation = pass1_response.content[0].text
+        observation = pass1_response.text
         logger.info(f"Pass 1 observation:\n{observation}")
 
         # ===== PASS 2: STRUCTURE — convert observation to JSON =====
@@ -492,31 +486,67 @@ class CabinetMeasurementAssistant:
             total_run_context=total_run_context,
         )
 
-        pass2_response = await self.anthropic_client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=4000,
-            temperature=0.0,
-            system="You are a precise cabinet measurement expert. Convert the observation into structured JSON. Be DECISIVE about standard widths. Return only valid JSON.",
-            messages=[
-                {"role": "user", "content": [
-                    {"type": "image", "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": base64_image,
-                    }},
-                    {"type": "text", "text": prompt},
-                ]},
+        pass2_response = self.genai_client.models.generate_content(
+            model='gemini-3.1-flash-image-preview',
+            contents=[
+                types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
+                prompt,
             ],
+            config=types.GenerateContentConfig(
+                system_instruction="You are a precise cabinet measurement expert. Convert the observation into structured JSON. Be DECISIVE about standard widths.",
+                response_mime_type='application/json',
+                response_schema=PhotoAnalysisResult,
+            ),
         )
 
-        data = self._extract_json(pass2_response.content[0].text)
+        data = json.loads(pass2_response.text)
         result = PhotoAnalysisResult(**data)
 
-        # No refinement passes — they just inflate confidence without fixing proportions.
-        # Opus 2-pass (observe + structure) is sufficient. Accuracy comes from
-        # better prompts and solver logic, not repeated LLM calls.
+        # ===== PASS 3: GENERATE 2.5D WIREFRAME =====
+        logger.info("Pass 3: Generating 2.5D wireframe...")
+        wireframe_bytes = None
+        try:
+            wireframe_response = self.genai_client.models.generate_content(
+                model='gemini-3.1-flash-image-preview',
+                contents=[
+                    types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
+                    "create a 2.5D wire frame of the cabinets in this photo",
+                ],
+                config=types.GenerateContentConfig(
+                    response_modalities=['TEXT', 'IMAGE'],
+                ),
+            )
+            for part in wireframe_response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.data:
+                    wireframe_bytes = part.inline_data.data
+                    logger.info(f"Pass 3: 2.5D wireframe generated ({len(wireframe_bytes)} bytes)")
+                    break
+        except Exception as e:
+            logger.warning(f"Pass 3: 2.5D wireframe failed: {e}")
 
-        return result
+        # ===== PASS 4: GENERATE MEASUREMENT DIAGRAM =====
+        logger.info("Pass 4: Generating measurement diagram...")
+        measurement_bytes = None
+        try:
+            measurement_response = self.genai_client.models.generate_content(
+                model='gemini-3.1-flash-image-preview',
+                contents=[
+                    types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
+                    "generate measurements for this",
+                ],
+                config=types.GenerateContentConfig(
+                    response_modalities=['TEXT', 'IMAGE'],
+                ),
+            )
+            for part in measurement_response.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.data:
+                    measurement_bytes = part.inline_data.data
+                    logger.info(f"Pass 4: Measurement diagram generated ({len(measurement_bytes)} bytes)")
+                    break
+        except Exception as e:
+            logger.warning(f"Pass 4: Measurement diagram failed: {e}")
+
+        return result, wireframe_bytes, measurement_bytes
 
     def generate_measurement_checklist(self, analysis: PhotoAnalysisResult) -> Dict[str, Any]:
         """
@@ -691,8 +721,7 @@ class CabinetMeasurementAssistant:
         measurements: List[MeasurementEntry],
         photo_bytes: bytes,
     ) -> Dict:
-        """Use OpenAI Vision to check measurements against photo proportions."""
-        base64_image = base64.b64encode(photo_bytes).decode("utf-8")
+        """Use Gemini Vision to check measurements against photo proportions."""
         media_type = self._detect_media_type(photo_bytes)
 
         prompt = CROSS_VALIDATION_PROMPT.format(
@@ -708,24 +737,19 @@ class CabinetMeasurementAssistant:
             ),
         )
 
-        response = await self.anthropic_client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=3000,
-            temperature=0.1,
-            system="You are a cabinet measurement expert. Catch errors. Return only valid JSON.",
-            messages=[
-                {"role": "user", "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image", "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": base64_image,
-                    }},
-                ]},
+        response = self.genai_client.models.generate_content(
+            model='gemini-3.1-flash-image-preview',
+            contents=[
+                prompt,
+                types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
             ],
+            config=types.GenerateContentConfig(
+                system_instruction="You are a cabinet measurement expert. Catch errors. Return only valid JSON.",
+                response_mime_type='application/json',
+            ),
         )
 
-        return self._extract_json(response.content[0].text)
+        return self._extract_json(response.text)
 
     # ===== STEP 3: Fill gaps =====
 
@@ -755,7 +779,6 @@ class CabinetMeasurementAssistant:
             return {"filled_measurements": [], "measurements_still_needed": [],
                     "overall_confidence": 1.0}
 
-        base64_image = base64.b64encode(photo_bytes).decode("utf-8")
         media_type = self._detect_media_type(photo_bytes)
 
         prompt = GAP_FILL_PROMPT.format(
@@ -768,24 +791,19 @@ class CabinetMeasurementAssistant:
             ),
         )
 
-        response = await self.anthropic_client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=3000,
-            temperature=0.1,
-            system="You are a cabinet measurement assistant. Estimate conservatively. Return only valid JSON.",
-            messages=[
-                {"role": "user", "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image", "source": {
-                        "type": "base64",
-                        "media_type": media_type,
-                        "data": base64_image,
-                    }},
-                ]},
+        response = self.genai_client.models.generate_content(
+            model='gemini-3.1-flash-image-preview',
+            contents=[
+                prompt,
+                types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
             ],
+            config=types.GenerateContentConfig(
+                system_instruction="You are a cabinet measurement assistant. Estimate conservatively. Return only valid JSON.",
+                response_mime_type='application/json',
+            ),
         )
 
-        return self._extract_json(response.content[0].text)
+        return self._extract_json(response.text)
 
     # ===== STEP 4: Final report =====
 
@@ -947,7 +965,7 @@ class CabinetMeasurementAssistant:
 PHOTO_CAPTURE_GUIDE = {
     "before_you_start": [
         "Place a tape measure or 24\" level flat on the countertop, visible in the photo",
-        "Turn on all kitchen lights — consistent lighting helps accuracy",
+        "Turn on all lights — consistent lighting helps accuracy",
         "Clear the countertops if possible — clutter hides cabinet edges",
     ],
     "photos_to_take": [
@@ -958,7 +976,7 @@ PHOTO_CAPTURE_GUIDE = {
         },
         {
             "name": "Left angle (if L-shaped or U-shaped)",
-            "instruction": "Stand at the left end of the kitchen, shoot toward the right",
+            "instruction": "Stand at the left end of the room, shoot toward the right",
             "why": "Captures the side that's hidden in the straight-on shot",
         },
         {

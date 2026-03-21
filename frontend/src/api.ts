@@ -32,6 +32,10 @@ export async function analyzePhoto(
   return res.json();
 }
 
+export function getWireframeUrl(sessionId: string): string {
+  return `${API_BASE}/${sessionId}/wireframe`;
+}
+
 export async function solveWidths(
   sessionId: string,
   totalRun: number,
@@ -121,4 +125,10 @@ export async function exportConfig(sessionId: string): Promise<object> {
   const res = await fetch(`${API_BASE}/${sessionId}/export`);
   if (!res.ok) throw new Error(`Export failed: ${res.status}`);
   return res.json();
+}
+
+export async function exportDxf(sessionId: string): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/${sessionId}/export-dxf`, { method: 'POST' });
+  if (!res.ok) throw new Error(`DXF export failed: ${res.status}`);
+  return res.blob();
 }

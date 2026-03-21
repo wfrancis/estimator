@@ -1,11 +1,14 @@
 # app.py - Cabinet Measurement API
 import os
+import logging
+logger = logging.getLogger(__name__)
+import io
 import uuid
 import json
 from pathlib import Path
 from typing import Optional, List, Dict
 
-# Load .env file if present (so ANTHROPIC_API_KEY persists across restarts)
+# Load .env file if present (API keys persist across restarts)
 _env_path = Path(__file__).parent.parent / ".env"
 if _env_path.exists():
     for line in _env_path.read_text().strip().splitlines():
@@ -57,8 +60,7 @@ cabinet_sessions: Dict[str, dict] = {}
 
 def _get_cabinet_assistant() -> CabinetMeasurementAssistant:
     """Get or create cabinet measurement assistant."""
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    return CabinetMeasurementAssistant(anthropic_api_key=anthropic_key)
+    return CabinetMeasurementAssistant()
 
 
 def _max_width_for_doors(door_count: int, drawer_count: int, is_sink: bool = False) -> float:
@@ -90,10 +92,15 @@ def _validate_and_fix_analysis(analysis: PhotoAnalysisResult) -> PhotoAnalysisRe
     import copy
     sections = list(analysis.cabinet_sections)
     fixed_sections = []
-    next_base_id = max(
-        (int(s.id.split("_")[-1]) for s in sections if s.id.startswith("base_")),
-        default=0,
-    ) + 1
+    # Extract max numeric suffix from base IDs (handles descriptive IDs like "base_far_left")
+    numeric_ids = []
+    for s in sections:
+        if s.id.startswith("base_"):
+            try:
+                numeric_ids.append(int(s.id.split("_")[-1]))
+            except ValueError:
+                pass
+    next_base_id = (max(numeric_ids) if numeric_ids else len(sections)) + 1
 
     for s in sections:
         if s.cabinet_type != "base" or not s.estimated_width or s.is_appliance:
@@ -214,13 +221,15 @@ async def analyze_cabinet_photo(
             raise HTTPException(status_code=400, detail="known_references must be valid JSON")
 
     try:
-        analysis = await assistant.analyze_photo(
+        logger.info(f"Analyzing photo with total_run={total_run}")
+        analysis, wireframe_bytes = await assistant.analyze_photo(
             photo_bytes, known_references=refs, total_run=total_run
         )
+        logger.info(f"Analysis complete: {len(analysis.cabinet_sections)} sections")
 
         # Post-analysis validation: split overly wide base cabinets
-        # A non-appliance base cabinet wider than 42" is likely two cabinets merged by the AI
         analysis = _validate_and_fix_analysis(analysis)
+        logger.info(f"Validation complete: {len(analysis.cabinet_sections)} sections after validation")
 
         checklist = assistant.generate_measurement_checklist(analysis)
 
@@ -229,6 +238,7 @@ async def analyze_cabinet_photo(
         cabinet_sessions[session_id] = {
             "analysis": analysis,
             "photo_bytes": photo_bytes,
+            "wireframe_bytes": wireframe_bytes,
             "measurements": [],
         }
 
@@ -236,10 +246,24 @@ async def analyze_cabinet_photo(
             "session_id": session_id,
             "analysis": analysis.model_dump(),
             "checklist": checklist,
+            "has_wireframe": wireframe_bytes is not None,
         }
 
     except Exception as e:
+        import traceback
+        logger.error(f"Analysis failed: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@app.get("/cabinet/{session_id}/wireframe")
+async def get_wireframe(session_id: str):
+    """Get the AI-generated wireframe elevation drawing."""
+    if session_id not in cabinet_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    wireframe = cabinet_sessions[session_id].get("wireframe_bytes")
+    if not wireframe:
+        raise HTTPException(status_code=404, detail="No wireframe available")
+    return Response(content=wireframe, media_type="image/jpeg")
 
 
 @app.post("/cabinet/{session_id}/measurements")
@@ -1058,17 +1082,18 @@ async def chat_with_assistant(session_id: str, request: ChatRequest):
     if session_id not in cabinet_sessions:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    import anthropic
+    from google import genai
+    from google.genai import types as genai_types
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("GOOGLE_API_KEY", "")
     if not api_key:
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set")
+        raise HTTPException(status_code=500, detail="GOOGLE_API_KEY not set")
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
     system_prompt = """You are a cabinet layout assistant for cabinet makers. This tool works for any room — kitchens, bathrooms, laundry, offices, garages, etc.
 
-You will receive the current scene data as JSON and a user request to modify it. Return ONLY valid JSON with the updated scene data. Do not include any explanation — just the JSON.
+You will receive the current scene data as JSON and a user request to modify it. Return ONLY the updated scene data as valid JSON.
 
 Rules:
 - Only modify what the user asks for
@@ -1079,23 +1104,16 @@ Rules:
 - Keep all existing fields intact when modifying"""
 
     try:
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=4096,
-            system=system_prompt,
-            messages=[{
-                "role": "user",
-                "content": f"Current scene:\n```json\n{json.dumps(request.current_scene, indent=2)}\n```\n\nUser request: {request.message}\n\nReturn the updated scene JSON only."
-            }],
+        response = client.models.generate_content(
+            model='gemini-3.1-flash-image-preview',
+            contents=f"Current scene:\n```json\n{json.dumps(request.current_scene, indent=2)}\n```\n\nUser request: {request.message}\n\nReturn the updated scene JSON only.",
+            config=genai_types.GenerateContentConfig(
+                system_instruction=system_prompt,
+                response_mime_type='application/json',
+            ),
         )
 
-        reply_text = response.content[0].text.strip()
-
-        # Try to parse as JSON
-        # Strip markdown code fences if present
-        if reply_text.startswith("```"):
-            lines = reply_text.split("\n")
-            reply_text = "\n".join(lines[1:-1] if lines[-1].startswith("```") else lines[1:])
+        reply_text = response.text.strip()
 
         updated_scene = json.loads(reply_text)
 
@@ -1113,6 +1131,135 @@ Rules:
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+
+
+class DxfExportRequest(BaseModel):
+    construction_type: Optional[str] = None
+    box_material_thickness: Optional[float] = None
+    back_panel_thickness: Optional[float] = None
+    back_panel_dado_depth: Optional[float] = None
+    edge_banding_thickness: Optional[float] = None
+    toe_kick_height: Optional[float] = None
+    toe_kick_depth: Optional[float] = None
+    face_frame_stile_width: Optional[float] = None
+    face_frame_rail_width: Optional[float] = None
+
+
+@app.post("/cabinet/{session_id}/export-dxf")
+async def export_dxf(session_id: str, request: Optional[DxfExportRequest] = None):
+    """
+    Generate a ZIP file containing:
+    - cut_list.json — Bill of Materials with exact part dimensions
+    - Individual DXF files for each part of each cabinet
+    - elevation.dxf — Front elevation overview drawing
+    """
+    import zipfile
+    from cabinet_parametric import ConstructionConfig, CabinetParts, generate_cut_list
+    from cabinet_dxf_generator import generate_cabinet_dxf_package, generate_elevation_dxf
+
+    if session_id not in cabinet_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    session = cabinet_sessions[session_id]
+    if "solver_result" not in session:
+        raise HTTPException(status_code=400, detail="Run /solve first")
+
+    solver_result = session["solver_result"]
+    base_sections = session["base_sections"]
+
+    # Build construction config from request body (use defaults for missing fields)
+    config_kwargs = {}
+    if request:
+        for field_name in (
+            "construction_type", "box_material_thickness", "back_panel_thickness",
+            "back_panel_dado_depth", "edge_banding_thickness", "toe_kick_height",
+            "toe_kick_depth", "face_frame_stile_width", "face_frame_rail_width",
+        ):
+            val = getattr(request, field_name, None)
+            if val is not None:
+                config_kwargs[field_name] = val
+    config = ConstructionConfig(**config_kwargs)
+
+    # Build cabinet list from solver result + base sections
+    section_lookup = {s.section_id: s for s in base_sections}
+    cabinets = []
+    for cw in solver_result.cabinet_widths:
+        sec = section_lookup.get(cw.section_id)
+        cab = {
+            "cabinet_id": cw.section_id,
+            "width": cw.standard_width,
+            "height": 34.5,
+            "depth": 24.0,
+            "door_count": 1,
+            "drawer_count": 0,
+            "cabinet_type": "base",
+        }
+        if sec:
+            cab["cabinet_type"] = sec.cabinet_type or "base"
+        cabinets.append(cab)
+
+    # Generate cut list
+    cut_list = generate_cut_list(cabinets, config=config)
+
+    # Serialize cut list to JSON (convert Part objects)
+    cut_list_json = {
+        "cabinets": [
+            {
+                "cabinet_id": cab_entry["cabinet_id"],
+                "nominal": cab_entry["nominal"],
+                "part_count": cab_entry["part_count"],
+                "total_area_sqft": round(cab_entry["total_area_sqft"], 2),
+                "parts": [
+                    {
+                        "name": p.name,
+                        "blank_width": round(p.blank_width, 4),
+                        "blank_length": round(p.blank_length, 4),
+                        "material": p.material,
+                        "thickness": p.thickness,
+                        "edge_banding": p.edge_banding,
+                        "grain_direction": p.grain_direction,
+                        "quantity": p.quantity,
+                        "notes": p.notes,
+                    }
+                    for p in cab_entry["parts"]
+                ],
+            }
+            for cab_entry in cut_list["cabinets"]
+        ],
+        "summary": cut_list["summary"],
+    }
+
+    # Build ZIP in memory
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # 1. Cut list JSON
+        zf.writestr("cut_list.json", json.dumps(cut_list_json, indent=2))
+
+        # 2. Individual part DXFs per cabinet
+        for cab_entry in cut_list["cabinets"]:
+            cab_id = cab_entry["cabinet_id"]
+            parts = cab_entry["parts"]
+            dxf_package = generate_cabinet_dxf_package(cab_id, parts, config)
+            for filename, dxf_bytes in dxf_package.items():
+                zf.writestr(f"parts/{filename}", dxf_bytes)
+
+        # 3. Elevation overview DXF
+        elevation_dxf = generate_elevation_dxf(
+            cabinets=cabinets,
+            total_run=session["solve_request"].total_run,
+        )
+        zf.writestr("elevation.dxf", elevation_dxf)
+
+    zip_bytes = zip_buffer.getvalue()
+    short_id = session_id[:8]
+
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="cabinet-dxf-{short_id}.zip"',
+        },
+    )
 
 
 @app.get("/cabinet/{session_id}/export")
