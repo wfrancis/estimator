@@ -473,11 +473,10 @@ class CabinetMeasurementAssistant:
         except Exception as e:
             logger.warning(f"Call 1 failed: {e}")
 
-        # ===== CALL 2: Wireframe → structured JSON =====
-        # Feed the wireframe (not the original photo) to extract measurements.
-        # The wireframe is a cleaner representation for measurement extraction.
-        json_source = wireframe_bytes or photo_bytes
-        logger.info("Call 2: Wireframe → structured JSON...")
+        # ===== CALL 2: Photo + Wireframe → structured JSON =====
+        # Send BOTH the original photo (for appliance identification) AND the wireframe
+        # (for spatial layout). This gives Gemini the best of both for accurate extraction.
+        logger.info("Call 2: Photo + Wireframe → structured JSON...")
 
         if total_run:
             total_run_context = (
@@ -495,19 +494,26 @@ class CabinetMeasurementAssistant:
             reference_context = "\n".join(lines)
 
         prompt = PASS2_STRUCTURE_PROMPT.format(
-            observation="Extract cabinet data from this wireframe drawing.",
+            observation="Use the original photo to identify appliances and cabinet types. Use the wireframe drawing to understand the spatial layout.",
             reference_context=reference_context,
             total_run_context=total_run_context,
         )
 
+        # Build content list — always include photo, add wireframe if available
+        call2_contents = [
+            types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
+        ]
+        if wireframe_bytes:
+            call2_contents.append(
+                types.Part.from_bytes(data=wireframe_bytes, mime_type='image/jpeg')
+            )
+        call2_contents.append(prompt)
+
         json_response = self.genai_client.models.generate_content(
             model='gemini-3.1-flash-image-preview',
-            contents=[
-                types.Part.from_bytes(data=json_source, mime_type='image/jpeg'),
-                prompt,
-            ],
+            contents=call2_contents,
             config=types.GenerateContentConfig(
-                system_instruction="You are a cabinet measurement expert. Extract every cabinet's dimensions from this drawing and return structured JSON.",
+                system_instruction="You are a cabinet measurement expert. Identify every cabinet, appliance opening, and wall cabinet from the photo. The wireframe shows the spatial layout. Return structured JSON. Include the refrigerator if visible.",
                 response_mime_type='application/json',
                 response_schema=PhotoAnalysisResult,
             ),
