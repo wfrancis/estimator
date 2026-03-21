@@ -55,6 +55,7 @@ export interface AnalyzeResponse {
   session_id: string;
   analysis: PhotoAnalysis;
   checklist: MeasurementChecklist;
+  has_wireframe?: boolean;
 }
 
 export interface SolvedCabinet {
