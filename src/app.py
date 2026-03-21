@@ -36,7 +36,7 @@ from cabinet_solver import (
     SolverResult,
     group_by_proportions,
 )
-from cabinet_elevation_drawing import generate_elevation_svg
+from cabinet_elevation_drawing import generate_elevation_svg, generate_wireframe_svg
 
 app = FastAPI(title="Cabinet Measurement API", version="1.0.0")
 
@@ -257,13 +257,43 @@ async def analyze_cabinet_photo(
 
 @app.get("/cabinet/{session_id}/wireframe")
 async def get_wireframe(session_id: str):
-    """Get the AI-generated wireframe elevation drawing."""
+    """Get the AI-generated 2.5D wireframe drawing."""
     if session_id not in cabinet_sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     wireframe = cabinet_sessions[session_id].get("wireframe_bytes")
     if not wireframe:
         raise HTTPException(status_code=404, detail="No wireframe available")
     return Response(content=wireframe, media_type="image/jpeg")
+
+
+@app.get("/cabinet/{session_id}/wireframe-svg")
+async def get_wireframe_svg(session_id: str):
+    """Get the deterministic 2.5D wireframe SVG rendered from solved data."""
+    if session_id not in cabinet_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session = cabinet_sessions[session_id]
+    if "solver_result" not in session:
+        raise HTTPException(status_code=400, detail="Run solve first")
+
+    svg = generate_wireframe_svg(
+        solver_result=session["solver_result"],
+        sections=session["base_sections"],
+        total_run=session["solve_request"].total_run,
+        wall_sections=session.get("wall_sections"),
+        wall_solver_result=session.get("wall_solver_result"),
+    )
+    return Response(content=svg, media_type="image/svg+xml")
+
+
+@app.get("/cabinet/{session_id}/measurement-diagram")
+async def get_measurement_diagram(session_id: str):
+    """Get the AI-generated measurement diagram."""
+    if session_id not in cabinet_sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+    measurement = cabinet_sessions[session_id].get("measurement_bytes")
+    if not measurement:
+        raise HTTPException(status_code=404, detail="No measurement diagram available")
+    return Response(content=measurement, media_type="image/jpeg")
 
 
 @app.post("/cabinet/{session_id}/measurements")

@@ -440,113 +440,84 @@ class CabinetMeasurementAssistant:
         total_run: Optional[float] = None,
     ) -> Tuple[PhotoAnalysisResult, Optional[bytes]]:
         """
-        Analyze photo, identify every cabinet section,
-        and generate a measurement checklist for the person on-site.
+        3-call pipeline:
+        1. Photo → Gemini → simple 2.5D wireframe image
+        2. Wireframe → Gemini → measurement image (with dimensions)
+        3. Measurement image → Gemini → structured JSON (response_schema)
+
+        The measurement image is the bridge between visual and data.
+        Our code then renders a deterministic wireframe from the JSON.
         """
-        # Validate and enhance
         photo_bytes = self._enhance_photo(photo_bytes)
         media_type = self._detect_media_type(photo_bytes)
 
-        # Build reference context
+        # ===== CALL 1: Photo → simple 2.5D wireframe =====
+        logger.info("Call 1: Photo → simple 2.5D wireframe...")
+        wireframe_bytes = None
+        try:
+            resp = self.genai_client.models.generate_content(
+                model='gemini-3.1-flash-image-preview',
+                contents=[
+                    types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
+                    "create a SIMPLE 2.5D wire frame of the cabinets in this photo",
+                ],
+                config=types.GenerateContentConfig(
+                    response_modalities=['TEXT', 'IMAGE'],
+                ),
+            )
+            for part in resp.candidates[0].content.parts:
+                if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.data:
+                    wireframe_bytes = part.inline_data.data
+                    logger.info(f"Call 1: Wireframe ({len(wireframe_bytes)} bytes)")
+                    break
+        except Exception as e:
+            logger.warning(f"Call 1 failed: {e}")
+
+        # ===== CALL 2: Wireframe → structured JSON =====
+        # Feed the wireframe (not the original photo) to extract measurements.
+        # The wireframe is a cleaner representation for measurement extraction.
+        json_source = wireframe_bytes or photo_bytes
+        logger.info("Call 2: Wireframe → structured JSON...")
+
+        if total_run:
+            total_run_context = (
+                f"The total wall run is {total_run} inches. "
+                f"All base cabinet estimated_widths MUST sum to approximately {total_run} inches."
+            )
+        else:
+            total_run_context = "Estimate each width based on door/drawer count."
+
         reference_context = ""
         if known_references:
-            lines = ["KNOWN REFERENCES PROVIDED BY USER:"]
+            lines = ["KNOWN REFERENCES:"]
             for obj, dim in known_references.items():
                 lines.append(f"  - {obj}: {dim} inches")
             reference_context = "\n".join(lines)
 
-        # ===== PASS 1: OBSERVE — describe what you see in plain English =====
-        logger.info("Pass 1: Observing photo...")
-        pass1_response = self.genai_client.models.generate_content(
-            model='gemini-3.1-flash-image-preview',
-            contents=[
-                types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
-                PASS1_OBSERVE_PROMPT,
-            ],
-            config=types.GenerateContentConfig(
-                system_instruction="You are a cabinet maker with 20 years experience. Look at this photo and describe exactly what you see. Be precise about cabinet counts, door counts, and layout. Pay special attention to cabinets above the fridge — these are very common and easy to miss.",
-            ),
-        )
-        observation = pass1_response.text
-        logger.info(f"Pass 1 observation:\n{observation}")
-
-        # ===== PASS 2: STRUCTURE — convert observation to JSON =====
-        logger.info("Pass 2: Structuring observation into JSON...")
-        if total_run:
-            total_run_context = (
-                f"The total wall run is {total_run} inches. "
-                f"All base cabinet estimated_widths MUST sum to approximately {total_run} inches. "
-                f"Adjust your width estimates so they add up correctly."
-            )
-        else:
-            total_run_context = "The total wall run is unknown. Estimate each width based on door/drawer count."
         prompt = PASS2_STRUCTURE_PROMPT.format(
-            observation=observation,
+            observation="Extract cabinet data from this wireframe drawing.",
             reference_context=reference_context,
             total_run_context=total_run_context,
         )
 
-        pass2_response = self.genai_client.models.generate_content(
+        json_response = self.genai_client.models.generate_content(
             model='gemini-3.1-flash-image-preview',
             contents=[
-                types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
+                types.Part.from_bytes(data=json_source, mime_type='image/jpeg'),
                 prompt,
             ],
             config=types.GenerateContentConfig(
-                system_instruction="You are a precise cabinet measurement expert. Convert the observation into structured JSON. Be DECISIVE about standard widths.",
+                system_instruction="You are a cabinet measurement expert. Extract every cabinet's dimensions from this drawing and return structured JSON.",
                 response_mime_type='application/json',
                 response_schema=PhotoAnalysisResult,
             ),
         )
 
-        data = json.loads(pass2_response.text)
+        data = json.loads(json_response.text)
         result = PhotoAnalysisResult(**data)
+        logger.info(f"Call 2: {len(result.cabinet_sections)} sections")
 
-        # ===== PASS 3: GENERATE 2.5D WIREFRAME =====
-        logger.info("Pass 3: Generating 2.5D wireframe...")
-        wireframe_bytes = None
-        try:
-            wireframe_response = self.genai_client.models.generate_content(
-                model='gemini-3.1-flash-image-preview',
-                contents=[
-                    types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
-                    "create a 2.5D wire frame of the cabinets in this photo",
-                ],
-                config=types.GenerateContentConfig(
-                    response_modalities=['TEXT', 'IMAGE'],
-                ),
-            )
-            for part in wireframe_response.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.data:
-                    wireframe_bytes = part.inline_data.data
-                    logger.info(f"Pass 3: 2.5D wireframe generated ({len(wireframe_bytes)} bytes)")
-                    break
-        except Exception as e:
-            logger.warning(f"Pass 3: 2.5D wireframe failed: {e}")
-
-        # ===== PASS 4: GENERATE MEASUREMENT DIAGRAM =====
-        logger.info("Pass 4: Generating measurement diagram...")
-        measurement_bytes = None
-        try:
-            measurement_response = self.genai_client.models.generate_content(
-                model='gemini-3.1-flash-image-preview',
-                contents=[
-                    types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
-                    "generate measurements for this",
-                ],
-                config=types.GenerateContentConfig(
-                    response_modalities=['TEXT', 'IMAGE'],
-                ),
-            )
-            for part in measurement_response.candidates[0].content.parts:
-                if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.data:
-                    measurement_bytes = part.inline_data.data
-                    logger.info(f"Pass 4: Measurement diagram generated ({len(measurement_bytes)} bytes)")
-                    break
-        except Exception as e:
-            logger.warning(f"Pass 4: Measurement diagram failed: {e}")
-
-        return result, wireframe_bytes, measurement_bytes
+        return result, wireframe_bytes
 
     def generate_measurement_checklist(self, analysis: PhotoAnalysisResult) -> Dict[str, Any]:
         """

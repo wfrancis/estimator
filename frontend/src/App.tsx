@@ -4,7 +4,6 @@ import { analyzePhoto, solveWidths, getSceneData, exportConfig, exportDxf, getWi
 import Header from './components/Header';
 import StepIndicator from './components/StepIndicator';
 import PhotoUpload from './components/PhotoUpload';
-import Cabinet3D from './components/Cabinet3D';
 import AIChatPanel from './components/AIChatPanel';
 
 export default function App() {
@@ -17,7 +16,8 @@ export default function App() {
   const [sceneData, setSceneData] = useState<SceneData | null>(null);
   const [totalRun, setTotalRun] = useState<number>(0);
   const [wireframeUrl, setWireframeUrl] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'wireframe' | '3d'>('wireframe');
+  const [measurementUrl, setMeasurementUrl] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'wireframe' | 'measurements'>('wireframe');
   const [verifiedWidths, setVerifiedWidths] = useState<Record<string, string>>({});
   const [verifyLoading, setVerifyLoading] = useState(false);
 
@@ -28,6 +28,7 @@ export default function App() {
     setSceneData(null);
     setTotalRun(0);
     setWireframeUrl(null);
+    setMeasurementUrl(null);
     setViewMode('wireframe');
     setError(null);
     setLoading(false);
@@ -42,9 +43,12 @@ export default function App() {
       const run = refs?.total_run || totalRun;
       const data = await analyzePhoto(file, refs, run || undefined);
       setSessionId(data.session_id);
-      // Set wireframe URL if available
+      // Set image URLs if available
       if (data.has_wireframe) {
         setWireframeUrl(getWireframeUrl(data.session_id));
+      }
+      if (data.has_measurements) {
+        setMeasurementUrl(`/cabinet/${data.session_id}/measurement-diagram`);
       }
 
       // Step 2: Solve with the total run
@@ -245,51 +249,43 @@ export default function App() {
             </div>
           </div>
 
-          {/* View Mode Tabs */}
-          <div className="flex gap-1 mb-2">
-            {wireframeUrl && (
-              <button
-                onClick={() => setViewMode('wireframe')}
-                className={`px-4 py-2 text-sm font-medium rounded-t-lg ${
-                  viewMode === 'wireframe'
-                    ? 'bg-white border-t border-l border-r border-gray-200 text-blue-600'
-                    : 'bg-gray-100 text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                📐 AI Wireframe
-              </button>
-            )}
-            <button
-              onClick={() => setViewMode('3d')}
-              className={`px-4 py-2 text-sm font-medium rounded-t-lg ${
-                viewMode === '3d'
-                  ? 'bg-white border-t border-l border-r border-gray-200 text-blue-600'
-                  : 'bg-gray-100 text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              🧊 3D View
-            </button>
-          </div>
-
-          {/* Wireframe / 3D Viewer */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-4">
-            {viewMode === 'wireframe' && wireframeUrl ? (
-              <div className="p-4">
-                <img
-                  src={wireframeUrl}
-                  alt="AI-generated cabinet wireframe elevation"
-                  className="w-full rounded-lg border border-gray-100"
-                />
-                <p className="text-xs text-gray-400 mt-2 text-center">
-                  AI-generated architectural elevation — verify dimensions on-site before fabrication
-                </p>
+          {/* Side-by-side: AI Reference + Deterministic Wireframe */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            {/* Left: AI-generated reference image */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">🖼️ AI Reference (Gemini)</h3>
               </div>
-            ) : (
-              <Cabinet3D
-                sceneData={sceneData}
-                onExport={handleExport}
-              />
-            )}
+              <div className="p-3">
+                {wireframeUrl ? (
+                  <img
+                    src={wireframeUrl}
+                    alt="AI-generated reference"
+                    className="w-full rounded-lg border border-gray-100"
+                  />
+                ) : (
+                  <div className="p-8 text-center text-gray-400 text-sm">Generating...</div>
+                )}
+              </div>
+            </div>
+
+            {/* Right: Deterministic wireframe from JSON */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">📐 Wireframe (from data)</h3>
+              </div>
+              <div className="p-3">
+                {sessionId ? (
+                  <img
+                    src={`/cabinet/${sessionId}/wireframe-svg`}
+                    alt="Deterministic 2.5D wireframe"
+                    className="w-full"
+                  />
+                ) : (
+                  <div className="p-8 text-center text-gray-400 text-sm">Solving...</div>
+                )}
+              </div>
+            </div>
           </div>
 
           {/* Solved results table */}
