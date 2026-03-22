@@ -15,6 +15,7 @@ export default function App() {
   const [solveData, setSolveData] = useState<SolveResponse | null>(null);
   const [sceneData, setSceneData] = useState<SceneData | null>(null);
   const [totalRun, setTotalRun] = useState<number>(0);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [wireframeUrl, setWireframeUrl] = useState<string | null>(null);
   const [measurementUrl, setMeasurementUrl] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'wireframe' | 'measurements'>('wireframe');
@@ -27,17 +28,22 @@ export default function App() {
     setSolveData(null);
     setSceneData(null);
     setTotalRun(0);
+    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    setPhotoUrl(null);
     setWireframeUrl(null);
     setMeasurementUrl(null);
     setViewMode('wireframe');
     setError(null);
     setLoading(false);
-  }, []);
+  }, [photoUrl]);
 
   // Upload photo → analyze → solve → get scene → go to 3D
   const handleUpload = useCallback(async (file: File, refs?: Record<string, number>) => {
     setLoading(true);
     setError(null);
+    // Create a blob URL for the original photo so we can display it later
+    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    setPhotoUrl(URL.createObjectURL(file));
     try {
       // Step 1: Analyze photo (pass total_run so AI can calibrate estimates)
       const run = refs?.total_run || totalRun;
@@ -216,7 +222,7 @@ export default function App() {
       )}
 
       {step === 'viewer' && sceneData && sessionId && (
-        <div className="max-w-6xl mx-auto px-4 py-4">
+        <div className="max-w-7xl mx-auto px-4 py-4">
           {/* Total run adjuster */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 mb-4 flex items-center justify-between flex-wrap gap-3">
             <div className="flex items-center gap-3">
@@ -249,9 +255,27 @@ export default function App() {
             </div>
           </div>
 
-          {/* Side-by-side: AI Reference + Deterministic Wireframe */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-            {/* Left: AI-generated reference image */}
+          {/* Side-by-side: Original Photo + AI Reference + Deterministic Wireframe */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+            {/* Left: Original uploaded photo */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
+                <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">📷 Original Photo</h3>
+              </div>
+              <div className="p-3">
+                {photoUrl ? (
+                  <img
+                    src={photoUrl}
+                    alt="Original uploaded photo"
+                    className="w-full rounded-lg border border-gray-100"
+                  />
+                ) : (
+                  <div className="p-8 text-center text-gray-400 text-sm">No photo</div>
+                )}
+              </div>
+            </div>
+
+            {/* Middle: AI-generated reference image */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">🖼️ AI Reference (Gemini)</h3>

@@ -102,3 +102,66 @@ The Gemini image is the visual TARGET. Our SVG must look like it — same layout
 - **50-74%**: Layout roughly right but proportions, style, or details are wrong.
 - **75-94%**: Close. Fix specific visual issues (door panels, handles, depth, dimensions).
 - **>= 95%**: PASS. Our SVG wireframe matches the Gemini reference quality.
+
+---
+
+## HARD CONSTRAINT — Project Manager Evaluation Standard
+
+### Be brutally critical. No self-congratulation.
+
+When evaluating the side-by-side wireframe comparison:
+
+1. **Score like a project manager**, not a developer. A PM doesn't care about "incremental progress" — they care about "does this look right to the client?" If the answer is no, the score is LOW.
+
+2. **Compare HONESTLY**. Don't round up. Don't claim 90% when it's really 65%. Look at BOTH images and ask: "If I showed these side by side to a cabinet maker, would they say our SVG represents the same cabinets?" If the answer is "sort of" — that's 60%, not 85%.
+
+3. **Make BOLD iterations**. If the current approach isn't working after 3 incremental fixes, STOP and rewrite. Small tweaks don't fix fundamental problems. A PM would say "start over on this component" not "adjust the padding by 2px."
+
+4. **Never self-score above 80% unless the images are genuinely comparable.** The Gemini image should be the standard. Our SVG must show:
+   - Every individual door panel clearly visible
+   - Proper isometric depth on all visible faces
+   - Distinct line weights (outer edges thick, inner details thin)
+   - Appliance openings visually different from regular cabinets
+   - Fridge as a clearly taller unit
+   - Professional architectural drawing quality — NOT a box diagram with labels
+
+5. **Record honest scores in `scores.md`**. If you scored something 90% last round and the user says "this isn't close" — your scoring is broken. Recalibrate and be harsher.
+
+---
+
+## HARD CONSTRAINT — 3-Image AI Agent Comparison
+
+### Mandatory: Compare ALL 3 images with AI agent personas after every pipeline run.
+
+The app displays THREE images side by side:
+1. **Left: Original Photo** — the actual photo from the jobsite (ground truth)
+2. **Middle: Gemini Wireframe** — AI-generated 2.5D wireframe from the photo
+3. **Right: Our SVG Wireframe** — code-rendered wireframe from the structured JSON
+
+### After EVERY pipeline run, simulate these 3 evaluator personas:
+
+#### 1. Project Manager
+- Looks at all 3 images and asks: "Would I show this to the client?"
+- Compares our SVG to the original photo — does it represent the SAME room?
+- Checks: cabinet count matches, appliances in right positions, proportions reasonable
+- Score 1-10 with specific critique
+
+#### 2. Cabinet Installer
+- Looks at all 3 images from a tradesperson's perspective
+- Asks: "Could I walk into that room with this SVG and know what to build?"
+- Checks: are all cabinets accounted for? Fridge opening right size? Sink base correct? Range opening where it should be?
+- Would NEVER accept a wireframe that doesn't match the photo
+- Score 1-10 with specific critique
+
+#### 3. Cabinet Designer / Estimator
+- Looks at proportions and measurements specifically
+- Compares widths in the SVG to what they can see in the photo
+- Checks: do the dimension lines make sense? Is a 12" cabinet really that narrow in the photo? Is a 36" sink base really that wide?
+- Score 1-10 with specific critique
+
+### Rules:
+- **Average score must be >= 8/10** to pass
+- If ANY persona scores below 6, STOP and fix before continuing
+- If the installer says "this doesn't match the photo" — the score is FAILING regardless of other scores
+- Record all 3 scores in `scores.md` after every run
+- The original photo is the ULTIMATE source of truth — not the Gemini wireframe

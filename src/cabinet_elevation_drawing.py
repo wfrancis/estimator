@@ -925,17 +925,22 @@ def generate_wireframe_svg(
     """
     Generate a deterministic 2.5D isometric wireframe SVG of the cabinet layout.
 
-    Renders front faces with shaker-style door panels, top faces as 30-degree
-    parallelograms, and right side faces for the rightmost cabinet and
-    fridge-type appliances. Includes countertop, toe kick, dimension lines,
-    and cabinet labels.
+    Produces a professional architectural wireframe with:
+    - Line weight hierarchy (outer edges, door frames, inner panels, depth lines)
+    - Visible door panels on every cabinet based on width heuristics
+    - Drawer fronts with inset panels and centered pull bars
+    - 30-degree isometric depth projection on all visible faces
+    - Countertop slab with overhang and isometric depth
+    - Appliance openings (range, DW, fridge) with correct styling
+    - Sink cutout on countertop above sink cabinets
+    - Arrow-tipped dimension lines with individual + total run
 
     Same inputs as generate_elevation_svg().
     """
     # ── Constants ──
-    SCALE = 6  # 6 px/in — larger for better visibility
+    SCALE = 6  # 6 px/in
     ISO_ANGLE = math.radians(30)
-    COS30 = math.cos(ISO_ANGLE)  # ≈ 0.866
+    COS30 = math.cos(ISO_ANGLE)  # ~0.866
     SIN30 = math.sin(ISO_ANGLE)  # 0.5
 
     # Cabinet geometry (inches)
@@ -943,9 +948,9 @@ def generate_wireframe_svg(
     BASE_DEPTH = 24.0
     WALL_HEIGHT = DrawingConfig.WALL_CABINET_HEIGHT    # 30"
     WALL_DEPTH = 12.0
-    COUNTERTOP_THICK = DrawingConfig.COUNTERTOP_THICKNESS  # 1.5"
-    COUNTERTOP_OVERHANG = 1.5  # front overhang in inches
-    BACKSPLASH_GAP = 12.0  # reduced from 15" for tighter layout — wall cabs closer to counter
+    COUNTERTOP_THICK = 2.0  # thicker slab for visual prominence
+    COUNTERTOP_OVERHANG = 1.5
+    BACKSPLASH_GAP = 10.0
     TOE_KICK_H = DrawingConfig.TOE_KICK_HEIGHT        # 4.5"
     FRIDGE_DEPTH = 30.0
     FRIDGE_HEIGHT = 70.0
@@ -953,36 +958,47 @@ def generate_wireframe_svg(
     # Margins
     MARGIN_LEFT = 40
     MARGIN_TOP = 50
-    MARGIN_BOTTOM = 80
-    MARGIN_RIGHT = 160  # room for iso depth projection
+    MARGIN_BOTTOM = 90
+    MARGIN_RIGHT = 180  # room for iso depth projection on right
 
-    # Isometric offsets (pixels) for base and wall depth
+    # Isometric pixel offsets for each depth
     base_dx = BASE_DEPTH * COS30 * SCALE
     base_dy = BASE_DEPTH * SIN30 * SCALE
     wall_dx = WALL_DEPTH * COS30 * SCALE
     wall_dy = WALL_DEPTH * SIN30 * SCALE
-    ct_dx = BASE_DEPTH * COS30 * SCALE  # countertop uses base depth
-    ct_dy = BASE_DEPTH * SIN30 * SCALE
+    ct_dx = (BASE_DEPTH + COUNTERTOP_OVERHANG) * COS30 * SCALE
+    ct_dy = (BASE_DEPTH + COUNTERTOP_OVERHANG) * SIN30 * SCALE
     fridge_dx = FRIDGE_DEPTH * COS30 * SCALE
     fridge_dy = FRIDGE_DEPTH * SIN30 * SCALE
 
-    # Colors
-    FACE_FRONT = "#f8f8f8"
-    FACE_TOP = "#e8e8e8"
-    FACE_SIDE = "#e0e0e0"
-    STROKE = "#222222"
-    STROKE_W = 1.5  # main stroke width
-    STROKE_THIN = "#444444"
-    STROKE_THIN_W = 0.8  # detail stroke width
-    TOE_KICK_FILL = "#888888"
-    COUNTERTOP_FILL = "#d4c4b0"
-    COUNTERTOP_TOP = "#c8b8a4"
-    APPLIANCE_FILL = "#e0e0e0"
-    GRID_COLOR = "#e0e0e0"
-    DIM_COLOR = "#666666"
-    LABEL_COLOR = "#444444"
+    # ── Line weight hierarchy ──
+    OUTER_SW = 3.0       # outer cabinet edges (bold silhouette)
+    OUTER_COLOR = "#222"
+    DOOR_SW = 1.5        # door frame lines
+    DOOR_COLOR = "#333"
+    PANEL_SW = 0.8       # inner recessed panels
+    PANEL_COLOR = "#555"
+    DEPTH_SW = 1.0       # isometric depth/projection lines
+    DEPTH_COLOR = "#444"
+    DIM_SW = 0.6         # dimension lines
+    DIM_COLOR = "#666"
+    HANDLE_SW = 2.5      # handle marks
+    HANDLE_COLOR = "#888"
 
-    # ── Build width lookup from solver result ──
+    # Fill colors (no fills for true wireframe — only strokes)
+    # But we use very light fills for readability and face differentiation
+    FILL_NONE = "none"
+    FILL_FRONT = "#fafafa"
+    FILL_TOP = "#f0f0f0"
+    FILL_SIDE = "#e8e8e8"
+    FILL_COUNTER_FRONT = "#d4c4b0"
+    FILL_COUNTER_TOP = "#c8b8a4"
+    FILL_COUNTER_SIDE = "#bfb09c"
+    FILL_APPLIANCE = "#ececec"
+    FILL_TOE_KICK = "#999"
+    LABEL_COLOR = "#444"
+
+    # ── Build width lookups ──
     width_lookup: Dict[str, float] = {}
     source_lookup: Dict[str, str] = {}
     for cw in solver_result.cabinet_widths:
@@ -990,142 +1006,232 @@ def generate_wireframe_svg(
         source_lookup[cw.section_id] = cw.source
 
     wall_width_lookup: Dict[str, float] = {}
-    wall_source_lookup: Dict[str, str] = {}
     if wall_solver_result:
         for cw in wall_solver_result.cabinet_widths:
             wall_width_lookup[cw.section_id] = cw.standard_width
-            wall_source_lookup[cw.section_id] = cw.source
 
-    # ── Separate base sections ──
+    # ── Separate sections ──
     base_sections = [s for s in sections if s.cabinet_type in ("base", "appliance_opening")]
     wall_secs = wall_sections or []
 
-    # ── Compute vertical positions (front face, in pixels, y-down) ──
-    # Wall cabinets top
+    # ── Vertical layout (y-down pixel coordinates) ──
     wall_top_y = MARGIN_TOP
     wall_h_px = WALL_HEIGHT * SCALE
-    # Backsplash gap
     backsplash_top = wall_top_y + wall_h_px
     backsplash_h_px = BACKSPLASH_GAP * SCALE
-    # Countertop
     ct_top_y = backsplash_top + backsplash_h_px
     ct_h_px = COUNTERTOP_THICK * SCALE
-    # Base cabinets
     base_top_y = ct_top_y + ct_h_px
     base_h_px = BASE_HEIGHT * SCALE
-    # Toe kick
-    toe_kick_y = base_top_y + base_h_px - TOE_KICK_H * SCALE
     toe_kick_h_px = TOE_KICK_H * SCALE
-    # Floor
     floor_y = base_top_y + base_h_px
 
-    # ── Compute canvas size ──
+    # Canvas size
     total_run_px = total_run * SCALE
     canvas_w = MARGIN_LEFT + total_run_px + max(base_dx, fridge_dx) + MARGIN_RIGHT
     canvas_h = floor_y + MARGIN_BOTTOM
 
     # ── SVG accumulator ──
-    svg_parts: List[str] = []
+    svg: List[str] = []
 
-    def _rect(x, y, w, h, fill="none", stroke=STROKE, sw=1.0, rx=0):
-        r = f' rx="{rx}"' if rx else ""
-        return f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" fill="{fill}" stroke="{stroke}" stroke-width="{sw}"{r}/>'
+    # ── Primitive drawing helpers ──
 
-    def _line(x1, y1, x2, y2, stroke=STROKE, sw=1.0, dash=""):
+    def _rect(x, y, w, h, fill="none", stroke="#222", sw=1.0, dash="", fill_opacity=None):
         d = f' stroke-dasharray="{dash}"' if dash else ""
-        return f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{stroke}" stroke-width="{sw}"{d}/>'
+        fo = f' fill-opacity="{fill_opacity}"' if fill_opacity is not None else ""
+        return (f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" '
+                f'fill="{fill}" stroke="{stroke}" stroke-width="{sw}"{d}{fo}/>')
 
-    def _polygon(points, fill="none", stroke=STROKE, sw=1.0):
+    def _line(x1, y1, x2, y2, stroke="#222", sw=1.0, dash=""):
+        d = f' stroke-dasharray="{dash}"' if dash else ""
+        return (f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" '
+                f'stroke="{stroke}" stroke-width="{sw}"{d}/>')
+
+    def _poly(points, fill="none", stroke="#222", sw=1.0, fill_opacity=None):
         pts = " ".join(f"{px:.1f},{py:.1f}" for px, py in points)
-        return f'<polygon points="{pts}" fill="{fill}" stroke="{stroke}" stroke-width="{sw}"/>'
+        fo = f' fill-opacity="{fill_opacity}"' if fill_opacity is not None else ""
+        return f'<polygon points="{pts}" fill="{fill}" stroke="{stroke}" stroke-width="{sw}"{fo}/>'
 
-    def _text(x, y, txt, size=10, anchor="middle", fill=LABEL_COLOR, weight="normal", rotate=0):
-        r = f' transform="rotate({rotate},{x:.1f},{y:.1f})"' if rotate else ""
+    def _text(x, y, txt, size=10, anchor="middle", fill="#444", weight="normal"):
         return (f'<text x="{x:.1f}" y="{y:.1f}" font-family="{DrawingConfig.FONT_FAMILY}" '
                 f'font-size="{size}" fill="{fill}" text-anchor="{anchor}" '
-                f'font-weight="{weight}"{r}>{txt}</text>')
+                f'font-weight="{weight}">{txt}</text>')
 
-    # ── Background + grid ──
-    svg_parts.append(_rect(0, 0, canvas_w, canvas_h, fill="white", stroke="none"))
-    # Grid lines
-    grid_spacing = 20  # px
-    for gx in range(0, int(canvas_w) + 1, grid_spacing):
-        svg_parts.append(_line(gx, 0, gx, canvas_h, stroke=GRID_COLOR, sw=0.5))
-    for gy in range(0, int(canvas_h) + 1, grid_spacing):
-        svg_parts.append(_line(0, gy, canvas_w, gy, stroke=GRID_COLOR, sw=0.5))
+    def _ellipse(cx, cy, rx, ry, fill="none", stroke="#555", sw=0.8):
+        return (f'<ellipse cx="{cx:.1f}" cy="{cy:.1f}" rx="{rx:.1f}" ry="{ry:.1f}" '
+                f'fill="{fill}" stroke="{stroke}" stroke-width="{sw}"/>')
 
-    # ── Title removed to save vertical space ──
+    # ── Isometric box: front face + top face + optional right side ──
 
-    # ── Helper: draw an isometric cabinet box ──
-    def draw_iso_box(x, y, w_px, h_px, depth_dx, depth_dy, fill_front, fill_top,
-                     fill_side, show_side=False, stroke_w=1.8):
-        """Draw the three visible faces of an isometric box."""
+    def draw_iso_box(x, y, w, h, ddx, ddy, fill_f, fill_t, fill_s,
+                     show_top=True, show_side=False, outer_sw=OUTER_SW,
+                     is_cabinet=False, shelf_count=0):
+        """Draw a 2.5D isometric box with proper line weights.
+
+        is_cabinet: if True, draws back panel outline and internal shelf lines
+                    for a see-through wireframe effect.
+        shelf_count: number of horizontal shelf lines inside the front face.
+        """
         parts = []
 
-        # Front face
-        parts.append(_rect(x, y, w_px, h_px, fill=fill_front, stroke=STROKE, sw=stroke_w))
+        # ── Back panel outline (drawn first so it sits behind everything) ──
+        if is_cabinet:
+            parts.append(_rect(x + ddx, y - ddy, w, h,
+                               fill="none", stroke="#ddd", sw=0.5))
 
-        # Top face (parallelogram: front-top-left → front-top-right → back-top-right → back-top-left)
-        top_pts = [
-            (x, y),
-            (x + w_px, y),
-            (x + w_px + depth_dx, y - depth_dy),
-            (x + depth_dx, y - depth_dy),
-        ]
-        parts.append(_polygon(top_pts, fill=fill_top, stroke=STROKE, sw=stroke_w))
+        # Front face — heaviest stroke, semi-transparent for wireframe look
+        front_opacity = 0.75 if is_cabinet else None
+        parts.append(_rect(x, y, w, h, fill=fill_f, stroke=OUTER_COLOR,
+                           sw=outer_sw, fill_opacity=front_opacity))
 
-        # Right side face (only if requested)
+        # Top face parallelogram
+        if show_top:
+            top_pts = [
+                (x, y), (x + w, y),
+                (x + w + ddx, y - ddy), (x + ddx, y - ddy),
+            ]
+            top_opacity = 0.8 if is_cabinet else None
+            parts.append(_poly(top_pts, fill=fill_t, stroke=DEPTH_COLOR,
+                               sw=DEPTH_SW, fill_opacity=top_opacity))
+            # Re-draw the front top edge at full weight so it reads as the cabinet edge
+            parts.append(_line(x, y, x + w, y, stroke=OUTER_COLOR, sw=outer_sw))
+        # Right side face
         if show_side:
             side_pts = [
-                (x + w_px, y),
-                (x + w_px + depth_dx, y - depth_dy),
-                (x + w_px + depth_dx, y + h_px - depth_dy),
-                (x + w_px, y + h_px),
+                (x + w, y), (x + w + ddx, y - ddy),
+                (x + w + ddx, y + h - ddy), (x + w, y + h),
             ]
-            parts.append(_polygon(side_pts, fill=fill_side, stroke=STROKE, sw=stroke_w))
+            side_opacity = 0.8 if is_cabinet else None
+            parts.append(_poly(side_pts, fill=fill_s, stroke=DEPTH_COLOR,
+                               sw=DEPTH_SW, fill_opacity=side_opacity))
+            # Re-draw right front edge at full weight
+            parts.append(_line(x + w, y, x + w, y + h, stroke=OUTER_COLOR, sw=outer_sw))
+
+        # ── Internal shelf lines (dashed, visible through semi-transparent face) ──
+        if is_cabinet and shelf_count > 0:
+            for si in range(1, shelf_count + 1):
+                frac = si / (shelf_count + 1)
+                sy = y + h * frac
+                parts.append(_line(x, sy, x + w, sy,
+                                   stroke="#ccc", sw=0.6, dash="3,2"))
 
         return parts
 
-    def draw_shaker_door(x, y, w, h, inset=None):
-        """Draw a shaker-style door panel (outer frame + inner recessed rectangle)."""
-        if inset is None:
-            inset = max(6, min(10, w * 0.08))
+    # ── Door panel (shaker style): outer frame + inner recessed panel + handle ──
+
+    def draw_door(x, y, w, h, handle_side="right"):
+        """
+        Draw a single shaker-style door with raised frame and recessed center panel.
+        handle_side: 'right' or 'left' — where the vertical handle bar goes.
+        """
         parts = []
-        # Outer door frame
-        parts.append(_rect(x, y, w, h, fill=FACE_FRONT, stroke=STROKE, sw=STROKE_W))
-        # Inner panel (inset) with subtle shadow lines for 3D recessed look
+        # Outer door frame rectangle (slightly off-white to distinguish from cabinet box)
+        parts.append(_rect(x, y, w, h, fill="#f5f5f5", stroke=DOOR_COLOR, sw=DOOR_SW))
+        # Inner recessed panel (inset 8-10px, scaled with size)
+        inset = max(5, min(10, w * 0.10, h * 0.06))
         if w > inset * 2 + 4 and h > inset * 2 + 4:
             ix, iy = x + inset, y + inset
             iw, ih = w - 2 * inset, h - 2 * inset
-            parts.append(_rect(ix, iy, iw, ih,
-                               fill="#ececec", stroke=STROKE_THIN, sw=STROKE_THIN_W))
-            # Shadow line along top inside edge
+            # Recessed center panel — darker fill to read as recessed
+            parts.append(_rect(ix, iy, iw, ih, fill="#e8e8e8", stroke=PANEL_COLOR, sw=PANEL_SW))
+            # 3D raised frame effect — highlight on top-left of inner panel
             parts.append(_line(ix + 1, iy + 1, ix + iw - 1, iy + 1,
-                              stroke="#ddd", sw=0.8))
-            # Shadow line along left inside edge
+                               stroke="#eee", sw=0.5))  # top highlight
             parts.append(_line(ix + 1, iy + 1, ix + 1, iy + ih - 1,
-                              stroke="#ddd", sw=0.8))
-        # Handle (small vertical bar pull on right side, vertically centered)
-        handle_x = x + w - inset - 3
-        handle_y = y + h * 0.42
-        handle_len = min(20, h * 0.15)
-        parts.append(_line(handle_x, handle_y, handle_x, handle_y + handle_len,
-                          stroke="#777", sw=2.5))
+                               stroke="#eee", sw=0.5))  # left highlight
+            # 3D raised frame effect — shadow on bottom-right of inner panel
+            parts.append(_line(ix + 1, iy + ih + 1, ix + iw + 1, iy + ih + 1,
+                               stroke="#bbb", sw=0.5))  # bottom shadow
+            parts.append(_line(ix + iw + 1, iy + 1, ix + iw + 1, iy + ih + 1,
+                               stroke="#bbb", sw=0.5))  # right shadow
+        # Vertical handle bar (prominent)
+        handle_len = max(18, min(24, h * 0.18))
+        handle_y = y + (h - handle_len) / 2
+        if handle_side == "right":
+            hx = x + w - inset - 4
+        else:
+            hx = x + inset + 4
+        parts.append(_line(hx, handle_y, hx, handle_y + handle_len,
+                           stroke=HANDLE_COLOR, sw=HANDLE_SW))
         return parts
 
-    def draw_drawer_front(x, y, w, h, inset=6):
-        """Draw a drawer front with inset panel and centered pull."""
+    # ── Drawer front: horizontal rectangle + inner panel + centered pull ──
+
+    def draw_drawer(x, y, w, h):
+        """Draw a single drawer front with recessed panel and horizontal pull."""
         parts = []
-        parts.append(_rect(x, y, w, h, fill=FACE_FRONT, stroke=STROKE, sw=STROKE_W))
-        if w > inset * 2 + 4 and h > inset * 2 + 4:
+        parts.append(_rect(x, y, w, h, fill=FILL_FRONT, stroke=DOOR_COLOR, sw=DOOR_SW))
+        inset = max(4, min(8, w * 0.06, h * 0.15))
+        if w > inset * 2 + 4 and h > inset * 2 + 2:
             parts.append(_rect(x + inset, y + inset, w - 2 * inset, h - 2 * inset,
-                               fill="#f0f0f0", stroke=STROKE_THIN, sw=STROKE_THIN_W))
-        # Horizontal bar pull centered
-        pull_w = min(30, w * 0.35)
+                               fill=FILL_NONE, stroke=PANEL_COLOR, sw=PANEL_SW))
+        # Horizontal pull bar centered
+        pull_w = min(36, w * 0.30)
         pull_x = x + (w - pull_w) / 2
         pull_y = y + h / 2
         parts.append(_line(pull_x, pull_y, pull_x + pull_w, pull_y,
-                          stroke="#777", sw=2.5))
+                           stroke=HANDLE_COLOR, sw=HANDLE_SW))
+        return parts
+
+    # ── Cabinet front face with doors/drawers based on width heuristics ──
+
+    def draw_cabinet_front(x, y, w_px, h_px, w_in, is_sink=False):
+        """
+        Draw doors and drawers inside a cabinet front face.
+        Uses width-based heuristics to determine door/drawer count.
+        """
+        parts = []
+        gap = 3  # px gap around and between panels
+
+        # Determine door and drawer counts
+        if is_sink:
+            door_count, drawer_count = 2, 0
+        elif w_in <= 15:
+            door_count, drawer_count = 1, 1
+        elif w_in <= 21:
+            door_count, drawer_count = 1, 1
+        elif w_in <= 36:
+            door_count, drawer_count = 2, 1
+        else:
+            door_count, drawer_count = 2, 2
+
+        usable_x = x + gap
+        usable_y = y + gap
+        usable_w = w_px - 2 * gap
+        usable_h = h_px - 2 * gap
+
+        if usable_w < 10 or usable_h < 10:
+            return parts
+
+        if drawer_count > 0 and door_count > 0:
+            # Drawers on top (~22% of face height), doors below
+            drawer_zone_h = usable_h * 0.22
+            each_drawer_h = max(14, (drawer_zone_h - gap * (drawer_count - 1)) / drawer_count)
+            actual_drawer_zone = each_drawer_h * drawer_count + gap * (drawer_count - 1)
+            door_zone_h = usable_h - actual_drawer_zone - gap
+
+            dy = usable_y
+            for _ in range(drawer_count):
+                for p in draw_drawer(usable_x, dy, usable_w, each_drawer_h):
+                    parts.append(p)
+                dy += each_drawer_h + gap
+
+            # Doors side by side below drawers
+            each_door_w = (usable_w - gap * (door_count - 1)) / door_count
+            for d in range(door_count):
+                dx = usable_x + d * (each_door_w + gap)
+                handle = "left" if d == 0 and door_count > 1 else "right"
+                for p in draw_door(dx, dy, each_door_w, door_zone_h, handle_side=handle):
+                    parts.append(p)
+
+        elif door_count > 0:
+            each_door_w = (usable_w - gap * (door_count - 1)) / door_count
+            for d in range(door_count):
+                dx = usable_x + d * (each_door_w + gap)
+                handle = "left" if d == 0 and door_count > 1 else "right"
+                for p in draw_door(dx, usable_y, each_door_w, usable_h, handle_side=handle):
+                    parts.append(p)
+
         return parts
 
     # ── Filler lookup ──
@@ -1133,180 +1239,125 @@ def generate_wireframe_svg(
     for f in solver_result.fillers:
         filler_lookup[f.position] = f
 
-    # ── Draw base cabinets ──
+    # ── Compute base cabinet positions ──
     x_cursor = MARGIN_LEFT
 
-    # Left-wall filler
     if base_sections:
         left_key = f"left_of_{base_sections[0].section_id}"
         left_filler = filler_lookup.get(left_key) or filler_lookup.get("left_wall")
         if left_filler and left_filler.width > 0.125:
             x_cursor += left_filler.width * SCALE
 
-    base_positions: List[Tuple[float, float, float, str, bool, Optional[str]]] = []
-    # (x, width_px, width_in, section_id, is_appliance, appliance_type)
+    # (x, width_px, width_in, section_id, is_true_appliance, appliance_type, is_sink)
+    base_positions: List[Tuple[float, float, float, str, bool, Optional[str], bool]] = []
 
     for i, section in enumerate(base_sections):
         w_in = width_lookup.get(section.section_id, section.proportion * total_run)
         w_px = w_in * SCALE
-        is_app = section.is_appliance and section.appliance_type and \
-            "sink" not in (section.appliance_type or "").lower()
+        is_sink = (section.is_appliance and section.appliance_type and
+                   "sink" in (section.appliance_type or "").lower())
+        is_true_app = (section.is_appliance and section.appliance_type and
+                       not is_sink)
+        if section.cabinet_type == "appliance_opening" and not section.appliance_type:
+            is_true_app = True
 
-        base_positions.append((x_cursor, w_px, w_in, section.section_id, is_app,
-                               section.appliance_type))
+        base_positions.append((x_cursor, w_px, w_in, section.section_id,
+                               is_true_app, section.appliance_type, is_sink))
         x_cursor += w_px
 
-        # Filler between cabinets
         if i < len(base_sections) - 1:
             fk = f"between_{section.section_id}_{base_sections[i + 1].section_id}"
             bf = filler_lookup.get(fk)
             if bf and bf.width > 0.125:
                 x_cursor += bf.width * SCALE
 
-    # Detect fridge positions for special handling
+    # Identify fridge indices
     fridge_indices = set()
-    for idx, (_, _, _, _, is_app, app_type) in enumerate(base_positions):
+    for idx, (_, _, _, _, is_app, app_type, _) in enumerate(base_positions):
         if is_app and app_type and "refrigerator" in (app_type or ""):
             fridge_indices.add(idx)
 
-    last_idx = len(base_positions) - 1
+    last_base_idx = len(base_positions) - 1
 
-    # Draw each base cabinet
-    for idx, (bx, bw, bw_in, sid, is_app, app_type) in enumerate(base_positions):
+    # ── Background ──
+    svg.append(_rect(0, 0, canvas_w, canvas_h, fill="#fafafa", stroke="none"))
+
+    # ── RENDER: Base cabinets ──
+    # We track sink positions so we can draw sink cutouts on the countertop later.
+    sink_positions: List[Tuple[float, float]] = []  # (center_x, width_px)
+
+    for idx, (bx, bw, bw_in, sid, is_app, app_type, is_sink) in enumerate(base_positions):
         is_fridge = idx in fridge_indices
-        show_right = (idx == last_idx) or is_fridge
+        show_side = (idx == last_base_idx) or is_fridge
 
         if is_fridge:
-            # Fridge: tall box with deeper projection
+            # ── Fridge: tall box with deep projection ──
             fridge_h_px = FRIDGE_HEIGHT * SCALE
             fridge_y = floor_y - fridge_h_px
-            box_parts = draw_iso_box(
-                bx, fridge_y, bw, fridge_h_px,
-                fridge_dx, fridge_dy,
-                APPLIANCE_FILL, FACE_TOP, FACE_SIDE,
-                show_side=True, stroke_w=1.5,
-            )
-            for p in box_parts:
-                svg_parts.append(p)
+            for p in draw_iso_box(bx, fridge_y, bw, fridge_h_px,
+                                  fridge_dx, fridge_dy,
+                                  FILL_APPLIANCE, FILL_TOP, FILL_SIDE,
+                                  show_top=True, show_side=True, outer_sw=OUTER_SW):
+                svg.append(p)
+            # Fridge has two tall door panels
+            gap = 4
+            door_h = fridge_h_px - 2 * gap
+            half_w = (bw - 3 * gap) / 2
+            if half_w > 10:
+                for p in draw_door(bx + gap, fridge_y + gap, half_w, door_h, handle_side="right"):
+                    svg.append(p)
+                for p in draw_door(bx + 2 * gap + half_w, fridge_y + gap, half_w, door_h,
+                                   handle_side="left"):
+                    svg.append(p)
             # Label
-            svg_parts.append(_text(bx + bw / 2, fridge_y + fridge_h_px / 2,
-                                   "FRIDGE", size=13, weight="bold"))
-            svg_parts.append(_text(bx + bw / 2, fridge_y + fridge_h_px / 2 + 16,
-                                   sid, size=11))
-        elif is_app:
-            # Appliance opening (range, DW, etc): recessed look with X pattern
-            inset = 4
-            svg_parts.append(_rect(bx, base_top_y, bw, base_h_px,
-                                   fill="#d8d8d8", stroke=STROKE, sw=1.2))
-            inner_x = bx + inset
-            inner_y = base_top_y + inset
-            inner_w = bw - 2 * inset
-            inner_h = base_h_px - 2 * inset
-            svg_parts.append(_rect(inner_x, inner_y, inner_w, inner_h,
-                                   fill="#d0d0d0", stroke=STROKE_THIN, sw=0.8))
-            # X pattern to indicate opening (not a cabinet)
-            svg_parts.append(_line(inner_x, inner_y,
-                                   inner_x + inner_w, inner_y + inner_h,
-                                   stroke="#bbb", sw=0.8, dash="4,3"))
-            svg_parts.append(_line(inner_x + inner_w, inner_y,
-                                   inner_x, inner_y + inner_h,
-                                   stroke="#bbb", sw=0.8, dash="4,3"))
-            # Appliance label
+            svg.append(_text(bx + bw / 2, fridge_y + fridge_h_px * 0.15,
+                             "FRIDGE", size=12, weight="bold", fill="#777"))
+
+        elif is_app and not is_sink:
+            # ── Appliance opening (range, DW, etc.) ──
+            # Outer box at base cabinet height — no isometric depth (it's recessed)
+            svg.append(_rect(bx, base_top_y, bw, base_h_px,
+                             fill=FILL_APPLIANCE, stroke=OUTER_COLOR, sw=OUTER_SW))
+            # Inner recessed area
+            inset = 6
+            svg.append(_rect(bx + inset, base_top_y + inset,
+                             bw - 2 * inset, base_h_px - 2 * inset,
+                             fill="#e4e4e4", stroke=DEPTH_COLOR, sw=PANEL_SW, dash="6,3"))
+            # Label
             label_map = {
                 "range_30": "RANGE", "range_36": "RANGE",
                 "dishwasher": "DW", "microwave_otr": "MW",
             }
-            lbl = label_map.get(app_type or "", "APPLIANCE")
-            svg_parts.append(_text(bx + bw / 2, base_top_y + base_h_px / 2, lbl,
-                                   size=13, weight="bold"))
-            svg_parts.append(_text(bx + bw / 2, base_top_y + base_h_px / 2 + 16,
-                                   sid, size=11))
+            lbl = label_map.get(app_type or "", app_type or "APPLIANCE")
+            svg.append(_text(bx + bw / 2, base_top_y + base_h_px / 2 + 4,
+                             lbl, size=12, weight="bold", fill="#888"))
+
         else:
-            # Regular cabinet box with isometric faces
-            box_parts = draw_iso_box(
-                bx, base_top_y, bw, base_h_px,
-                base_dx, base_dy,
-                FACE_FRONT, FACE_TOP, FACE_SIDE,
-                show_side=show_right, stroke_w=1.2,
-            )
-            for p in box_parts:
-                svg_parts.append(p)
+            # ── Regular cabinet (including sink base) ──
+            # Draw the cabinet box SHORTER by the toe kick height
+            cab_face_h = base_h_px - toe_kick_h_px
+            for p in draw_iso_box(bx, base_top_y, bw, cab_face_h,
+                                  base_dx, base_dy,
+                                  FILL_FRONT, FILL_TOP, FILL_SIDE,
+                                  show_top=True, show_side=show_side, outer_sw=OUTER_SW,
+                                  is_cabinet=True, shelf_count=1):
+                svg.append(p)
 
-            # Toe kick
-            svg_parts.append(_rect(bx, toe_kick_y, bw, toe_kick_h_px,
-                                   fill=TOE_KICK_FILL, stroke=STROKE, sw=0.8))
+            # Toe kick band — dark recessed strip below the cabinet face
+            toe_y = base_top_y + cab_face_h
+            svg.append(_rect(bx, toe_y, bw, toe_kick_h_px,
+                             fill="#777", stroke=OUTER_COLOR, sw=DOOR_SW))
 
-            # Door and drawer layout inside front face
-            # Determine door/drawer counts from the section
-            sec = next((s for s in sections if s.section_id == sid), None)
-            door_count = 0
-            drawer_count = 0
-            is_sink = False
-            if sec:
-                # Heuristic: determine door/drawer layout from width and type
-                is_sink = sec.is_appliance and sec.appliance_type and \
-                    "sink" in (sec.appliance_type or "").lower()
-                if is_sink:
-                    door_count = 2
-                    drawer_count = 0
-                elif bw_in <= 15:
-                    # Narrow: single door, maybe a drawer on top
-                    door_count = 1
-                    drawer_count = 1
-                elif bw_in <= 24:
-                    door_count = 1
-                    drawer_count = 1
-                elif bw_in <= 36:
-                    door_count = 2
-                    drawer_count = 1
-                else:
-                    door_count = 2
-                    drawer_count = 2
+            # Draw doors and drawers on the front face (excluding toe kick)
+            for p in draw_cabinet_front(bx, base_top_y, bw, cab_face_h, bw_in, is_sink=is_sink):
+                svg.append(p)
 
-            panel_gap = 3  # gap between panels in px
-            usable_y = base_top_y + panel_gap
-            usable_h = base_h_px - toe_kick_h_px - panel_gap * 2
-
-            if drawer_count > 0 and door_count > 0:
-                # Drawers on top, doors on bottom (20% of front height, min 15px each)
-                drawer_total_h = usable_h * 0.20
-                each_drawer_h = (drawer_total_h - panel_gap * (drawer_count - 1)) / drawer_count
-                if each_drawer_h < 15:
-                    each_drawer_h = 15
-                    drawer_total_h = each_drawer_h * drawer_count + panel_gap * (drawer_count - 1)
-                door_total_h = usable_h - drawer_total_h - panel_gap
-
-                dy = usable_y
-                for _ in range(drawer_count):
-                    for p in draw_drawer_front(bx + panel_gap, dy,
-                                               bw - 2 * panel_gap, each_drawer_h):
-                        svg_parts.append(p)
-                    dy += each_drawer_h + panel_gap
-
-                # Doors below drawers
-                each_door_w = (bw - panel_gap * (door_count + 1)) / door_count
-                for d in range(door_count):
-                    dx = bx + panel_gap + d * (each_door_w + panel_gap)
-                    for p in draw_shaker_door(dx, dy, each_door_w, door_total_h):
-                        svg_parts.append(p)
-            elif door_count > 0:
-                each_door_w = (bw - panel_gap * (door_count + 1)) / door_count
-                for d in range(door_count):
-                    dx = bx + panel_gap + d * (each_door_w + panel_gap)
-                    for p in draw_shaker_door(dx, usable_y, each_door_w, usable_h):
-                        svg_parts.append(p)
-
-            # Sink label if applicable
+            # Track sink positions for countertop cutout
             if is_sink:
-                svg_parts.append(_text(bx + bw / 2, base_top_y + base_h_px / 2,
-                                       "SINK", size=13, weight="bold", fill="#777"))
+                sink_positions.append((bx + bw / 2, bw))
 
-            # Cabinet ID label below toe kick
-            svg_parts.append(_text(bx + bw / 2, floor_y + 14, sid, size=11, fill=LABEL_COLOR))
-
-    # ── Draw countertop ──
-    # Countertop spans all base cabinets (excluding fridge)
-    non_fridge = [(bx, bw) for idx, (bx, bw, _, _, _, _) in enumerate(base_positions)
+    # ── RENDER: Countertop ──
+    non_fridge = [(bx, bw) for idx, (bx, bw, _, _, _, _, _) in enumerate(base_positions)
                   if idx not in fridge_indices]
     if non_fridge:
         ct_left = non_fridge[0][0]
@@ -1314,156 +1365,163 @@ def generate_wireframe_svg(
         ct_w = ct_right - ct_left
         overhang_px = COUNTERTOP_OVERHANG * SCALE
 
-        # Front face of countertop (with overhang) — thicker stroke as visual anchor
-        svg_parts.append(_rect(ct_left - overhang_px, ct_top_y, ct_w + 2 * overhang_px,
-                               ct_h_px, fill=COUNTERTOP_FILL, stroke=STROKE, sw=2.0))
+        ct_x = ct_left - overhang_px
+        ct_total_w = ct_w + 2 * overhang_px
 
-        # Top face of countertop (parallelogram with overhang)
+        # Front face of countertop slab
+        svg.append(_rect(ct_x, ct_top_y, ct_total_w, ct_h_px,
+                         fill=FILL_COUNTER_FRONT, stroke=OUTER_COLOR, sw=OUTER_SW))
+
+        # Top face (parallelogram)
         ct_pts = [
-            (ct_left - overhang_px, ct_top_y),
-            (ct_right + overhang_px, ct_top_y),
-            (ct_right + overhang_px + ct_dx, ct_top_y - ct_dy),
-            (ct_left - overhang_px + ct_dx, ct_top_y - ct_dy),
+            (ct_x, ct_top_y),
+            (ct_x + ct_total_w, ct_top_y),
+            (ct_x + ct_total_w + ct_dx, ct_top_y - ct_dy),
+            (ct_x + ct_dx, ct_top_y - ct_dy),
         ]
-        svg_parts.append(_polygon(ct_pts, fill=COUNTERTOP_TOP, stroke=STROKE, sw=1.2))
+        svg.append(_poly(ct_pts, fill=FILL_COUNTER_TOP, stroke=DEPTH_COLOR, sw=DEPTH_SW))
+        # Re-draw front edge of countertop at full weight
+        svg.append(_line(ct_x, ct_top_y, ct_x + ct_total_w, ct_top_y,
+                         stroke=OUTER_COLOR, sw=OUTER_SW))
 
-        # Right edge of countertop
+        # Right side face of countertop
+        right_x = ct_x + ct_total_w
         side_pts = [
-            (ct_right + overhang_px, ct_top_y),
-            (ct_right + overhang_px + ct_dx, ct_top_y - ct_dy),
-            (ct_right + overhang_px + ct_dx, ct_top_y + ct_h_px - ct_dy),
-            (ct_right + overhang_px, ct_top_y + ct_h_px),
+            (right_x, ct_top_y),
+            (right_x + ct_dx, ct_top_y - ct_dy),
+            (right_x + ct_dx, ct_top_y + ct_h_px - ct_dy),
+            (right_x, ct_top_y + ct_h_px),
         ]
-        svg_parts.append(_polygon(side_pts, fill=COUNTERTOP_FILL, stroke=STROKE, sw=1.0))
+        svg.append(_poly(side_pts, fill=FILL_COUNTER_SIDE, stroke=DEPTH_COLOR, sw=DEPTH_SW))
 
-    # ── Draw wall cabinets ──
+        # Sink cutout(s) on countertop surface
+        for scx, scw in sink_positions:
+            # Draw a small rounded rectangle representing the sink bowl on the top face
+            # Project center onto the isometric top surface
+            sink_w = scw * 0.55
+            sink_h = min(ct_dy * 0.6, 20)
+            # The countertop top face midpoint (isometric)
+            mid_offset_x = ct_dx * 0.4
+            mid_offset_y = ct_dy * 0.4
+            s_cx = scx + mid_offset_x
+            s_cy = ct_top_y - mid_offset_y
+            svg.append(_ellipse(s_cx, s_cy, sink_w / 2, sink_h / 2,
+                                fill="#bbb", stroke=PANEL_COLOR, sw=PANEL_SW))
+
+    # ── RENDER: Wall cabinets ──
     if wall_secs:
-        # Build position map for wall cabinets aligned to base cabinets
+        # Build alignment lookup from base positions
         base_x_by_id: Dict[str, Tuple[float, float]] = {}
-        for bx, bw, _, sid, _, _ in base_positions:
+        for bx, bw, _, sid, _, _, _ in base_positions:
             base_x_by_id[sid] = (bx, bw)
 
         wall_x_cursor = MARGIN_LEFT
-        wall_positions: List[Tuple[float, float, float, str, str]] = []
+        wall_positions: List[Tuple[float, float, float, str, str, int]] = []
 
-        for wi, wsec in enumerate(wall_secs):
+        for wsec in wall_secs:
             ww_in = wall_width_lookup.get(wsec.section_id, wsec.proportion * total_run)
             ww_px = ww_in * SCALE
 
-            # Try to align with base cabinets
             if wsec.above_base_ids and wsec.above_base_ids[0] in base_x_by_id:
                 aligned_x, _ = base_x_by_id[wsec.above_base_ids[0]]
                 wall_x_cursor = aligned_x
 
             wall_positions.append((wall_x_cursor, ww_px, ww_in, wsec.section_id,
-                                   wsec.cabinet_type))
+                                   wsec.cabinet_type, getattr(wsec, 'door_count', 0)))
             wall_x_cursor += ww_px
 
         last_wall_idx = len(wall_positions) - 1
-        for widx, (wx, ww, ww_in, wsid, wcab_type) in enumerate(wall_positions):
+
+        for widx, (wx, ww, ww_in, wsid, wcab_type, w_sec_door_count) in enumerate(wall_positions):
             if wcab_type == "wall_gap":
-                # Hood gap: empty space with label and bracket line
+                # Hood / range hood gap — empty space, no box drawn
                 mid_x = wx + ww / 2
                 mid_y = wall_top_y + wall_h_px / 2
-                svg_parts.append(_text(mid_x, mid_y, "HOOD", size=12,
-                                       weight="bold", fill="#999"))
-                # Small horizontal bracket line
-                bracket_w = min(ww * 0.6, 60)
-                bracket_y = mid_y + 16
-                svg_parts.append(_line(mid_x - bracket_w / 2, bracket_y,
-                                       mid_x + bracket_w / 2, bracket_y,
-                                       stroke="#aaa", sw=1.5))
-                svg_parts.append(_text(wx + ww / 2, wall_top_y - 10, wsid, size=11,
-                                       fill=LABEL_COLOR))
+                svg.append(_text(mid_x, mid_y, "HOOD", size=10, fill="#aaa"))
                 continue
 
-            show_right_wall = (widx == last_wall_idx)
+            show_side_wall = (widx == last_wall_idx)
 
-            box_parts = draw_iso_box(
-                wx, wall_top_y, ww, wall_h_px,
-                wall_dx, wall_dy,
-                FACE_FRONT, FACE_TOP, FACE_SIDE,
-                show_side=show_right_wall, stroke_w=1.2,
-            )
-            for p in box_parts:
-                svg_parts.append(p)
+            for p in draw_iso_box(wx, wall_top_y, ww, wall_h_px,
+                                  wall_dx, wall_dy,
+                                  FILL_FRONT, FILL_TOP, FILL_SIDE,
+                                  show_top=True, show_side=show_side_wall, outer_sw=OUTER_SW,
+                                  is_cabinet=True, shelf_count=2):
+                svg.append(p)
 
             # Door panels inside wall cabinet front face
-            panel_gap = 3
-            w_door_count = 2 if ww_in >= 24 else 1
-            each_door_w = (ww - panel_gap * (w_door_count + 1)) / w_door_count
-            wall_door_h = wall_h_px - 2 * panel_gap
-            wall_door_inset = None  # default
-            if wall_door_h < 80:
-                default_inset = max(6, min(10, each_door_w * 0.08))
-                wall_door_inset = max(4, default_inset * 0.7)
-            for d in range(w_door_count):
-                dx = wx + panel_gap + d * (each_door_w + panel_gap)
-                for p in draw_shaker_door(dx, wall_top_y + panel_gap,
-                                          each_door_w, wall_door_h,
-                                          inset=wall_door_inset):
-                    svg_parts.append(p)
+            door_margin_x = 3   # px margin on each side
+            door_margin_y = 4   # px margin top/bottom
+            # Use section door_count if available and > 0, otherwise heuristic
+            if w_sec_door_count and w_sec_door_count > 0:
+                w_door_count = w_sec_door_count
+            else:
+                w_door_count = 1 if ww_in <= 18 else 2
 
-            # Wall cabinet label
-            svg_parts.append(_text(wx + ww / 2, wall_top_y - 10, wsid, size=11,
-                                   fill=LABEL_COLOR))
+            usable_w = ww - 2 * door_margin_x
+            usable_h = wall_h_px - 2 * door_margin_y
+            gap_between = 3  # px gap between doors
+            each_door_w = (usable_w - gap_between * (w_door_count - 1)) / w_door_count
 
-    # ── Back wall line (left edge, top of wall cabs to floor) ──
-    svg_parts.append(_line(MARGIN_LEFT, wall_top_y, MARGIN_LEFT, floor_y,
-                           stroke="#ccc", sw=1.0))
+            if each_door_w > 8 and usable_h > 8:
+                for d in range(w_door_count):
+                    dx = wx + door_margin_x + d * (each_door_w + gap_between)
+                    handle = "left" if d == 0 and w_door_count > 1 else "right"
+                    for p in draw_door(dx, wall_top_y + door_margin_y,
+                                       each_door_w, usable_h, handle_side=handle):
+                        svg.append(p)
 
-    # ── Floor line (spans full width of base cabinets) ──
+    # ── Floor line ──
     if base_positions:
-        floor_x1 = base_positions[0][0]
-        floor_x2 = base_positions[-1][0] + base_positions[-1][1]
-        svg_parts.append(_line(floor_x1, floor_y, floor_x2, floor_y,
-                               stroke="#999", sw=1.5))
+        fl_x1 = base_positions[0][0]
+        fl_x2 = base_positions[-1][0] + base_positions[-1][1]
+        svg.append(_line(fl_x1, floor_y, fl_x2, floor_y, stroke="#888", sw=1.5))
 
-    # ── Dimension lines (below base cabinets) ──
-    dim_y = floor_y + 35
-    dim_total_y = floor_y + 58
+    # ── Dimension lines ──
+    dim_y1 = floor_y + 30       # individual cabinet widths
+    dim_y2 = floor_y + 58       # total run
 
-    def draw_dimension(x1, x2, y, label, color=DIM_COLOR, label_size=12, label_weight="normal"):
+    def draw_dim(x1, x2, y, label, color=DIM_COLOR, size=11, weight="normal"):
+        """Draw an arrow-tipped dimension line with extension lines."""
         parts = []
-        arrow_size = 4
-        parts.append(_line(x1, y, x2, y, stroke=color, sw=1.0))
+        arr = 4  # arrowhead size
+        # Main dimension line
+        parts.append(_line(x1, y, x2, y, stroke=color, sw=DIM_SW))
         # Left arrowhead
-        parts.append(_line(x1, y, x1 + arrow_size, y - arrow_size, stroke=color, sw=1.0))
-        parts.append(_line(x1, y, x1 + arrow_size, y + arrow_size, stroke=color, sw=1.0))
+        parts.append(_line(x1, y, x1 + arr, y - arr, stroke=color, sw=DIM_SW))
+        parts.append(_line(x1, y, x1 + arr, y + arr, stroke=color, sw=DIM_SW))
         # Right arrowhead
-        parts.append(_line(x2, y, x2 - arrow_size, y - arrow_size, stroke=color, sw=1.0))
-        parts.append(_line(x2, y, x2 - arrow_size, y + arrow_size, stroke=color, sw=1.0))
-        # Extension lines
-        parts.append(_line(x1, y - 8, x1, y + 8, stroke=color, sw=0.5))
-        parts.append(_line(x2, y - 8, x2, y + 8, stroke=color, sw=0.5))
-        # Label
+        parts.append(_line(x2, y, x2 - arr, y - arr, stroke=color, sw=DIM_SW))
+        parts.append(_line(x2, y, x2 - arr, y + arr, stroke=color, sw=DIM_SW))
+        # Extension lines (vertical ticks)
+        parts.append(_line(x1, y - 8, x1, y + 8, stroke=color, sw=0.4))
+        parts.append(_line(x2, y - 8, x2, y + 8, stroke=color, sw=0.4))
+        # Label centered above line
         mid_x = (x1 + x2) / 2
-        parts.append(_text(mid_x, y - 5, label, size=label_size, fill=color, weight=label_weight))
+        parts.append(_text(mid_x, y - 5, label, size=size, fill=color, weight=weight))
         return parts
 
-    # Individual cabinet width dimensions
-    for bx, bw, bw_in, sid, is_app, _ in base_positions:
+    # Individual widths
+    for bx, bw, bw_in, sid, _, _, _ in base_positions:
         label = f'{bw_in:.0f}"' if bw_in == int(bw_in) else f'{bw_in:.1f}"'
-        for p in draw_dimension(bx, bx + bw, dim_y, label):
-            svg_parts.append(p)
+        for p in draw_dim(bx, bx + bw, dim_y1, label):
+            svg.append(p)
 
-    # Total run dimension
+    # Total run
     if base_positions:
         run_x1 = base_positions[0][0]
         run_x2 = base_positions[-1][0] + base_positions[-1][1]
-        for p in draw_dimension(run_x1, run_x2, dim_total_y,
-                                f'{total_run:.1f}" TOTAL RUN', color="#333",
-                                label_size=13, label_weight="bold"):
-            svg_parts.append(p)
+        total_label = f'{total_run:.0f}" TOTAL' if total_run == int(total_run) else f'{total_run:.1f}" TOTAL'
+        for p in draw_dim(run_x1, run_x2, dim_y2, total_label,
+                          color="#333", size=12, weight="bold"):
+            svg.append(p)
 
     # ── Assemble SVG ──
     svg_header = (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'viewBox="0 0 {canvas_w:.0f} {canvas_h:.0f}" '
         f'width="{canvas_w:.0f}" height="{canvas_h:.0f}" '
-        f'style="background:white">'
+        f'style="background:#fafafa">'
     )
-    svg_body = "\n".join(svg_parts)
-    svg_footer = "</svg>"
-
-    return f"{svg_header}\n{svg_body}\n{svg_footer}"
+    svg_body = "\n".join(svg)
+    return f"{svg_header}\n{svg_body}\n</svg>"

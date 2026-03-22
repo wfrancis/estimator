@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Tuple, Any
 
 import numpy as np
 from PIL import Image, ImageEnhance, ImageOps
+import anthropic
 from google import genai
 from google.genai import types
 from pydantic import BaseModel, Field, field_validator
@@ -429,6 +430,9 @@ class CabinetMeasurementAssistant:
         self.genai_client = genai.Client(
             api_key=os.environ.get("GOOGLE_API_KEY", "")
         )
+        self.anthropic_client = anthropic.AsyncAnthropic(
+            api_key=anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        )
         self.standards = KitchenStandards()
 
     # ===== STEP 1: Analyze photo and generate checklist =====
@@ -473,10 +477,11 @@ class CabinetMeasurementAssistant:
         except Exception as e:
             logger.warning(f"Call 1 failed: {e}")
 
-        # ===== CALL 2: Photo + Wireframe → structured JSON =====
-        # Send BOTH the original photo (for appliance identification) AND the wireframe
-        # (for spatial layout). This gives Gemini the best of both for accurate extraction.
-        logger.info("Call 2: Photo + Wireframe → structured JSON...")
+        # ===== CALL 2: Photo → structured JSON (Opus 4.6) =====
+        # Opus analyzes the ORIGINAL PHOTO ONLY — the Gemini wireframe is just
+        # for visual reference, NOT for data extraction. Sending the wireframe
+        # to Opus confuses it because the wireframe varies every run.
+        logger.info("Call 2: Photo → structured JSON (Opus 4.6)...")
 
         if total_run:
             total_run_context = (
@@ -494,34 +499,34 @@ class CabinetMeasurementAssistant:
             reference_context = "\n".join(lines)
 
         prompt = PASS2_STRUCTURE_PROMPT.format(
-            observation="Use the original photo to identify appliances and cabinet types. Use the wireframe drawing to understand the spatial layout.",
+            observation="Look at this photo carefully. Identify every cabinet, appliance, and opening. Count doors and drawers on each cabinet precisely.",
             reference_context=reference_context,
             total_run_context=total_run_context,
         )
 
-        # Build content list — always include photo, add wireframe if available
-        call2_contents = [
-            types.Part.from_bytes(data=photo_bytes, mime_type=media_type),
+        # Send ONLY the original photo — NOT the wireframe
+        call2_content = [
+            {"type": "image", "source": {
+                "type": "base64",
+                "media_type": media_type,
+                "data": base64.b64encode(photo_bytes).decode("utf-8"),
+            }},
+            {"type": "text", "text": prompt},
         ]
-        if wireframe_bytes:
-            call2_contents.append(
-                types.Part.from_bytes(data=wireframe_bytes, mime_type='image/jpeg')
-            )
-        call2_contents.append(prompt)
 
-        json_response = self.genai_client.models.generate_content(
-            model='gemini-3.1-flash-image-preview',
-            contents=call2_contents,
-            config=types.GenerateContentConfig(
-                system_instruction="You are a cabinet measurement expert. Identify every cabinet, appliance opening, and wall cabinet from the photo. The wireframe shows the spatial layout. Return structured JSON. Include the refrigerator if visible.",
-                response_mime_type='application/json',
-                response_schema=PhotoAnalysisResult,
-            ),
+        opus_response = await self.anthropic_client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=4000,
+            temperature=0.0,
+            system="You are a cabinet measurement expert. Identify every cabinet, appliance opening, and wall cabinet. Return ONLY valid JSON matching the schema exactly. Include the refrigerator if visible. Include wall_gap sections for range hood openings.",
+            messages=[
+                {"role": "user", "content": call2_content},
+            ],
         )
 
-        data = json.loads(json_response.text)
+        data = self._extract_json(opus_response.content[0].text)
         result = PhotoAnalysisResult(**data)
-        logger.info(f"Call 2: {len(result.cabinet_sections)} sections")
+        logger.info(f"Call 2 (Opus): {len(result.cabinet_sections)} sections")
 
         return result, wireframe_bytes
 
