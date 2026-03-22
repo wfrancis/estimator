@@ -1,0 +1,443 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Universal Cabinet Specification",
+  "version": "1.0.0",
+  "description": "Parametric JSON schema for any cabinet project — kitchens, baths, closets, built-ins, garages, mudrooms. All dimensions in inches unless units overridden.",
+
+  "type": "object",
+  "required": ["project", "defaults", "runs"],
+  "properties": {
+
+    "project": {
+      "type": "object",
+      "description": "Job-level metadata",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "client": { "type": "string" },
+        "job_number": { "type": "string" },
+        "room": { "type": "string", "enum": ["kitchen", "bathroom", "closet", "laundry", "mudroom", "garage", "office", "entertainment", "bar", "pantry", "other"] },
+        "units": { "type": "string", "enum": ["inches", "mm"], "default": "inches" },
+        "date": { "type": "string", "format": "date" },
+        "notes": { "type": "string" }
+      }
+    },
+
+    "defaults": {
+      "type": "object",
+      "description": "Shop defaults — any cabinet inherits these unless overridden at the unit level",
+      "properties": {
+        "construction": {
+          "type": "string",
+          "enum": ["face_frame", "frameless"],
+          "default": "face_frame"
+        },
+        "box_material": {
+          "type": "string",
+          "description": "Cabinet box material — birch ply, maple ply, melamine, MDF, particle board, etc."
+        },
+        "box_thickness": {
+          "type": "number",
+          "description": "Box side panel thickness",
+          "default": 0.75
+        },
+        "back_panel": {
+          "type": "object",
+          "properties": {
+            "material": { "type": "string" },
+            "thickness": { "type": "number", "default": 0.25 },
+            "method": { "type": "string", "enum": ["dado", "rabbeted", "applied"], "default": "dado" }
+          }
+        },
+        "face_frame": {
+          "type": "object",
+          "description": "Only applies if construction is face_frame",
+          "properties": {
+            "material": { "type": "string" },
+            "stile_width": { "type": "number", "default": 1.5 },
+            "rail_width": { "type": "number", "default": 1.5 },
+            "attachment": { "type": "string", "enum": ["pocket_screw", "mortise_tenon", "dowel", "biscuit", "glue_nail"], "default": "pocket_screw" }
+          }
+        },
+        "door": {
+          "type": "object",
+          "properties": {
+            "style": {
+              "type": "string",
+              "enum": ["shaker", "slab", "raised_panel", "beadboard", "glass_frame", "mullion", "open", "applied_moulding", "mitered", "cope_and_stick"],
+              "default": "shaker"
+            },
+            "overlay": {
+              "type": "string",
+              "enum": ["full", "half", "inset"],
+              "default": "full"
+            },
+            "material": { "type": "string" },
+            "thickness": { "type": "number", "default": 0.75 },
+            "reveal": {
+              "type": "number",
+              "description": "Gap between doors / door-to-frame in inches",
+              "default": 0.125
+            }
+          }
+        },
+        "drawer": {
+          "type": "object",
+          "properties": {
+            "box_material": { "type": "string", "description": "Drawer box material — Baltic birch, solid maple, plywood, dovetail box, etc." },
+            "box_thickness": { "type": "number", "default": 0.5 },
+            "bottom_thickness": { "type": "number", "default": 0.25 },
+            "slide_type": { "type": "string", "enum": ["undermount", "side_mount", "center_mount", "wooden_runner"], "default": "undermount" },
+            "slide_extension": { "type": "string", "enum": ["full", "three_quarter", "over_travel"], "default": "full" },
+            "soft_close": { "type": "boolean", "default": true },
+            "joinery": { "type": "string", "enum": ["dovetail", "rabbet", "lock_rabbet", "box_joint", "dowel"], "default": "dovetail" }
+          }
+        },
+        "hinge": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["concealed_euro", "butt", "barrel", "surface_mount", "pivot", "no_bore"], "default": "concealed_euro" },
+            "soft_close": { "type": "boolean", "default": true },
+            "opening_angle": { "type": "number", "default": 110 },
+            "count_per_door": {
+              "type": "string",
+              "description": "Rule: 2 for doors up to 40in, 3 for 40-60in, 4 for 60in+",
+              "default": "auto"
+            }
+          }
+        },
+        "hardware": {
+          "type": "object",
+          "properties": {
+            "pull_type": { "type": "string", "enum": ["bar", "cup", "knob", "finger", "tab", "integrated", "none"], "default": "bar" },
+            "pull_size": { "type": "number", "description": "Center-to-center in inches" },
+            "pull_finish": { "type": "string" },
+            "pull_position": {
+              "type": "string",
+              "enum": ["upper_door_bottom", "lower_door_top", "drawer_center", "drawer_top", "custom"],
+              "default": "upper_door_bottom",
+              "description": "Where pull mounts relative to door/drawer"
+            }
+          }
+        },
+        "finish": {
+          "type": "object",
+          "properties": {
+            "type": { "type": "string", "enum": ["stain", "paint", "natural", "lacquer", "conversion_varnish", "oil", "unfinished"] },
+            "color": { "type": "string" },
+            "sheen": { "type": "string", "enum": ["matte", "satin", "semi_gloss", "gloss"] },
+            "species": { "type": "string", "description": "Wood species — maple, cherry, oak, walnut, hickory, alder, poplar, birch, etc." }
+          }
+        },
+        "toe_kick": {
+          "type": "object",
+          "properties": {
+            "height": { "type": "number", "default": 4.5 },
+            "depth": { "type": "number", "default": 3 },
+            "type": { "type": "string", "enum": ["integral", "separate", "legs", "none"], "default": "separate" },
+            "material": { "type": "string" }
+          }
+        },
+        "shelf": {
+          "type": "object",
+          "properties": {
+            "material": { "type": "string" },
+            "thickness": { "type": "number", "default": 0.75 },
+            "adjustable": { "type": "boolean", "default": true },
+            "pin_type": { "type": "string", "enum": ["5mm", "quarter_inch", "pilaster", "dado"], "default": "5mm" },
+            "pin_spacing": { "type": "number", "description": "Hole spacing in inches", "default": 1.25 },
+            "edge_band": { "type": "boolean", "default": true }
+          }
+        },
+        "standard_depths": {
+          "type": "object",
+          "description": "Default depths by cabinet type — override per unit if needed",
+          "properties": {
+            "base": { "type": "number", "default": 24 },
+            "wall": { "type": "number", "default": 12 },
+            "tall": { "type": "number", "default": 24 },
+            "vanity": { "type": "number", "default": 21 },
+            "desk": { "type": "number", "default": 24 }
+          }
+        },
+        "standard_heights": {
+          "type": "object",
+          "description": "Default heights by cabinet type",
+          "properties": {
+            "base": { "type": "number", "default": 34.5, "description": "Without countertop" },
+            "wall": { "type": "number", "default": 30 },
+            "tall": { "type": "number", "default": 84 },
+            "vanity": { "type": "number", "default": 34.5 }
+          }
+        }
+      }
+    },
+
+    "runs": {
+      "type": "array",
+      "description": "A run is a linear section of cabinets along one wall or surface. A project can have multiple runs (L-shape = 2 runs, U-shape = 3, island = 1 separate run, etc.)",
+      "items": {
+        "type": "object",
+        "required": ["id", "cabinets"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string", "description": "Human label — 'North Wall', 'Island', 'Pantry Wall', etc." },
+          "wall_length": { "type": "number", "description": "Total available wall length in inches" },
+          "origin": {
+            "type": "object",
+            "description": "3D position of run start in room coordinates",
+            "properties": {
+              "x": { "type": "number", "default": 0 },
+              "y": { "type": "number", "default": 0 },
+              "z": { "type": "number", "default": 0 }
+            }
+          },
+          "direction": {
+            "type": "number",
+            "description": "Angle in degrees from room X-axis (0=left-to-right, 90=front-to-back, etc.)",
+            "default": 0
+          },
+          "countertop": {
+            "type": "object",
+            "properties": {
+              "material": { "type": "string" },
+              "thickness": { "type": "number", "default": 1.5 },
+              "overhang_front": { "type": "number", "default": 1.5 },
+              "overhang_sides": { "type": "number", "default": 0 },
+              "backsplash": {
+                "type": "object",
+                "properties": {
+                  "height": { "type": "number", "default": 4 },
+                  "material": { "type": "string" },
+                  "full_height": { "type": "boolean", "default": false }
+                }
+              },
+              "edge_profile": { "type": "string", "enum": ["eased", "bullnose", "ogee", "bevel", "waterfall", "mitered", "square", "chamfer"] },
+              "cutouts": {
+                "type": "array",
+                "description": "Sink cutouts, cooktop cutouts, etc.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "type": { "type": "string", "enum": ["sink", "cooktop", "grommet", "custom"] },
+                    "offset_from_left": { "type": "number" },
+                    "width": { "type": "number" },
+                    "depth": { "type": "number" }
+                  }
+                }
+              }
+            }
+          },
+          "cabinets": {
+            "type": "array",
+            "description": "Cabinets in this run, ordered left to right (or start to end)",
+            "items": { "$ref": "#/definitions/cabinet" }
+          },
+          "fillers": {
+            "type": "array",
+            "description": "Filler strips between cabinets or at wall ends",
+            "items": {
+              "type": "object",
+              "properties": {
+                "position": { "type": "string", "enum": ["before_first", "after_last", "between"], "description": "Where in run" },
+                "between_index": { "type": "array", "items": { "type": "integer" }, "description": "If between, indices of adjacent cabinets [left, right]" },
+                "width": { "type": "number" },
+                "scribe": { "type": "boolean", "default": false, "description": "Is this a scribe filler that gets trimmed to fit?" }
+              }
+            }
+          },
+          "trim": {
+            "type": "object",
+            "description": "Trim and moulding for this run",
+            "properties": {
+              "crown": {
+                "type": "object",
+                "properties": {
+                  "profile": { "type": "string" },
+                  "height": { "type": "number" },
+                  "spring_angle": { "type": "number", "default": 45 },
+                  "build_up": { "type": "boolean", "default": false }
+                }
+              },
+              "light_rail": {
+                "type": "object",
+                "properties": {
+                  "profile": { "type": "string" },
+                  "height": { "type": "number", "default": 1.5 }
+                }
+              },
+              "base_shoe": {
+                "type": "object",
+                "properties": {
+                  "profile": { "type": "string" },
+                  "height": { "type": "number" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "appliance_openings": {
+      "type": "array",
+      "description": "Spaces reserved for appliances — range, fridge, dishwasher, microwave, etc.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "enum": ["range", "refrigerator", "dishwasher", "microwave", "wall_oven", "speed_oven", "wine_cooler", "trash_compactor", "washer", "dryer", "other"] },
+          "run_id": { "type": "string" },
+          "position_after_cabinet_index": { "type": "integer", "description": "Insert opening after this cabinet index in the run" },
+          "width": { "type": "number" },
+          "height": { "type": "number" },
+          "depth": { "type": "number" },
+          "requires_panels": { "type": "boolean", "description": "Does this opening need side panels (e.g., panel-ready fridge)?" }
+        }
+      }
+    }
+  },
+
+  "definitions": {
+    "cabinet": {
+      "type": "object",
+      "required": ["id", "type", "width"],
+      "properties": {
+        "id": { "type": "string", "description": "Unique ID — use shop convention like 'B1', 'W3', 'T1', 'V2'" },
+        "type": {
+          "type": "string",
+          "enum": [
+            "base",
+            "base_blind_corner",
+            "base_diagonal_corner",
+            "base_lazy_susan",
+            "base_sink",
+            "base_farm_sink",
+            "base_drawer_bank",
+            "base_pull_out",
+            "base_tray",
+            "base_spice",
+            "base_waste",
+            "base_appliance",
+            "base_desk",
+            "base_end_shelf",
+            "wall",
+            "wall_blind_corner",
+            "wall_diagonal_corner",
+            "wall_end_shelf",
+            "wall_plate_rack",
+            "wall_microwave",
+            "wall_hood",
+            "wall_bridge",
+            "wall_stacker",
+            "tall_pantry",
+            "tall_oven",
+            "tall_utility",
+            "tall_broom",
+            "vanity",
+            "vanity_drawer",
+            "vanity_sink",
+            "linen_tower",
+            "bookcase",
+            "wine_rack",
+            "entertainment",
+            "wardrobe",
+            "custom"
+          ]
+        },
+        "label": { "type": "string", "description": "Optional human label — 'Sink Base', 'Spice Pull-Out', etc." },
+        "row": {
+          "type": "string",
+          "enum": ["base", "wall", "tall"],
+          "description": "Which vertical row this cabinet sits in. base = floor, wall = upper, tall = floor-to-ceiling"
+        },
+
+        "width": { "type": "number", "description": "Cabinet width in inches — standard sizes: 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 42, 48" },
+        "height": { "type": "number", "description": "Overrides default height for this type" },
+        "depth": { "type": "number", "description": "Overrides default depth for this type" },
+
+        "face": {
+          "type": "object",
+          "description": "What the front of this cabinet looks like",
+          "properties": {
+            "sections": {
+              "type": "array",
+              "description": "Top-to-bottom sections of the face. A drawer-over-double-door has 2 sections: [{drawer}, {doors}]",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": { "type": "string", "enum": ["door", "drawer", "false_front", "open", "glass_door", "appliance_panel", "x_panel"] },
+                  "count": { "type": "integer", "description": "Number of doors/drawers in this section (1=single, 2=double, 3=triple)", "default": 1 },
+                  "height": { "type": "number", "description": "Section height in inches. If omitted, auto-calculated from remaining space." },
+                  "hinge_side": { "type": "string", "enum": ["left", "right", "both", "top", "bottom", "none"], "description": "Only relevant for single doors" },
+                  "style_override": { "type": "string", "description": "Override default door style for this section only" },
+                  "mullion_pattern": { "type": "string", "enum": ["none", "vertical_center", "horizontal_center", "grid_2x2", "grid_3x3", "prairie", "cathedral", "custom"], "description": "For glass doors" },
+                  "insert": { "type": "string", "enum": ["glass_clear", "glass_frosted", "glass_seeded", "glass_leaded", "mesh", "chicken_wire", "speaker_cloth", "open"], "description": "What fills the mullion opening" }
+                }
+              }
+            }
+          }
+        },
+
+        "interior": {
+          "type": "object",
+          "properties": {
+            "shelves": { "type": "integer", "default": 1, "description": "Number of interior shelves" },
+            "shelf_positions": { "type": "array", "items": { "type": "number" }, "description": "Custom shelf heights from bottom of interior" },
+            "dividers": {
+              "type": "object",
+              "properties": {
+                "vertical": { "type": "integer", "default": 0 },
+                "horizontal": { "type": "integer", "default": 0 }
+              }
+            },
+            "rollouts": { "type": "integer", "default": 0, "description": "Number of roll-out trays" },
+            "accessories": {
+              "type": "array",
+              "description": "Built-in accessories",
+              "items": {
+                "type": "string",
+                "enum": ["lazy_susan", "half_moon", "blind_corner_pull_out", "spice_insert", "cutlery_divider", "peg_system", "pull_out_waste", "pull_out_recycling", "tray_dividers", "cookie_sheet_divider", "pot_lid_organizer", "mixer_lift", "charging_station", "knife_block", "wine_insert", "stemware_rack", "plate_rack", "paper_towel", "ironing_board", "hamper"]
+              }
+            }
+          }
+        },
+
+        "construction_overrides": {
+          "type": "object",
+          "description": "Override any default construction values for this specific cabinet",
+          "properties": {
+            "construction": { "type": "string", "enum": ["face_frame", "frameless"] },
+            "box_material": { "type": "string" },
+            "back_panel_material": { "type": "string" },
+            "door_style": { "type": "string" },
+            "door_overlay": { "type": "string" },
+            "drawer_slide_type": { "type": "string" },
+            "hinge_type": { "type": "string" },
+            "finish": { "type": "object" }
+          }
+        },
+
+        "hardware_overrides": {
+          "type": "object",
+          "description": "Override default hardware for this specific cabinet",
+          "properties": {
+            "pull_type": { "type": "string" },
+            "pull_size": { "type": "number" },
+            "pull_finish": { "type": "string" }
+          }
+        },
+
+        "end_panels": {
+          "type": "object",
+          "description": "Exposed end treatments",
+          "properties": {
+            "left": { "type": "string", "enum": ["none", "flush", "applied", "scribed", "finished"], "default": "none" },
+            "right": { "type": "string", "enum": ["none", "flush", "applied", "scribed", "finished"], "default": "none" }
+          }
+        },
+
+        "notes": { "type": "string", "description": "Free-text shop notes — special instructions, site conditions, etc." }
+      }
+    }
+  }
+}

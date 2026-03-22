@@ -1,0 +1,79 @@
+{
+  "project": {
+    "name": "Master Walk-In Closet",
+    "client": "Park Residence",
+    "job_number": "2026-0061",
+    "room": "closet",
+    "units": "inches",
+    "date": "2026-03-21"
+  },
+  "defaults": {
+    "construction": "frameless",
+    "box_material": "3/4 white melamine",
+    "box_thickness": 0.75,
+    "back_panel": { "material": "1/4 white melamine", "thickness": 0.25, "method": "rabbeted" },
+    "door": { "style": "slab", "overlay": "full", "material": "3/4 white melamine", "thickness": 0.75, "reveal": 0.125 },
+    "drawer": { "box_material": "1/2 white melamine", "slide_type": "undermount", "soft_close": true, "joinery": "lock_rabbet" },
+    "hinge": { "type": "concealed_euro", "soft_close": true },
+    "hardware": { "pull_type": "integrated", "pull_finish": "none" },
+    "finish": { "type": "natural", "color": "white", "sheen": "matte" },
+    "toe_kick": { "height": 0, "type": "none" },
+    "shelf": { "material": "3/4 white melamine", "adjustable": true, "pin_type": "5mm", "edge_band": true },
+    "standard_depths": { "base": 14, "wall": 14, "tall": 14 },
+    "standard_heights": { "base": 84, "wall": 84, "tall": 84 }
+  },
+  "runs": [
+    {
+      "id": "closet_left",
+      "label": "Left Wall — Long Hang + Shelves",
+      "wall_length": 96,
+      "cabinets": [
+        {
+          "id": "C1", "type": "wardrobe", "label": "Long Hang Section", "row": "tall", "width": 36, "height": 84,
+          "face": { "sections": [{ "type": "open", "count": 1 }] },
+          "interior": { "shelves": 1, "accessories": [] },
+          "notes": "Single chrome oval rod at 68in. One shelf above rod."
+        },
+        {
+          "id": "C2", "type": "tall_utility", "label": "Shelf Tower Center", "row": "tall", "width": 24, "height": 84,
+          "face": { "sections": [{ "type": "open", "count": 1 }] },
+          "interior": { "shelves": 8 }
+        },
+        {
+          "id": "C3", "type": "wardrobe", "label": "Double Hang Section", "row": "tall", "width": 36, "height": 84,
+          "face": { "sections": [{ "type": "open", "count": 1 }] },
+          "interior": { "shelves": 1 },
+          "notes": "Two chrome oval rods — upper at 68in, lower at 34in. Shelf above upper rod."
+        }
+      ]
+    },
+    {
+      "id": "closet_back",
+      "label": "Back Wall — Drawers + Doors",
+      "wall_length": 72,
+      "cabinets": [
+        {
+          "id": "C4", "type": "base_drawer_bank", "label": "6-Drawer Island Base", "row": "base", "width": 36, "height": 36,
+          "depth": 22,
+          "face": { "sections": [
+            { "type": "drawer", "count": 1, "height": 6 },
+            { "type": "drawer", "count": 1, "height": 6 },
+            { "type": "drawer", "count": 1, "height": 6 },
+            { "type": "drawer", "count": 1, "height": 6 },
+            { "type": "drawer", "count": 1, "height": 6 },
+            { "type": "drawer", "count": 1, "height": 6 }
+          ]},
+          "interior": { "accessories": ["cutlery_divider"] },
+          "end_panels": { "left": "finished", "right": "finished" },
+          "notes": "Center island piece. Countertop is tempered glass."
+        },
+        {
+          "id": "C5", "type": "tall_utility", "label": "Shoe Tower", "row": "tall", "width": 36, "height": 84,
+          "face": { "sections": [{ "type": "door", "count": 2 }] },
+          "interior": { "shelves": 10 },
+          "notes": "Slanted shoe shelves — 10 shelves at 15-degree tilt, chrome fence rails."
+        }
+      ]
+    }
+  ]
+}

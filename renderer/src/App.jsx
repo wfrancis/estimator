@@ -259,6 +259,9 @@ export default function App() {
   const [jsonInput, setJsonInput] = useState("");
   const [jsonError, setJsonError] = useState(null);
   const [mode, setMode] = useState("home"); // home | loaded
+  const [uploading, setUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState("");
+  const [wireframePreview, setWireframePreview] = useState(null);
 
   const update = (s) => { setSpec(s); setVer(v=>v+1); };
 
@@ -276,7 +279,38 @@ export default function App() {
     } catch(e) { setJsonError(String(e.message)); }
   };
 
-  const reset = () => { setSpec(null); setMode("home"); setJsonInput(""); setJsonError(null); setVer(0); };
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadStatus("Uploading wireframe...");
+    setJsonError(null);
+    setWireframePreview(URL.createObjectURL(file));
+
+    try {
+      setUploadStatus("Sending to Claude Sonnet for extraction...");
+      const formData = new FormData();
+      formData.append("image", file);
+      const resp = await fetch("http://localhost:8001/api/extract", { method: "POST", body: formData });
+      if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(`Extraction failed: ${err}`);
+      }
+      const extracted = await resp.json();
+      setUploadStatus(`Extracted ${extracted.cabinets?.length || 0} cabinets`);
+      extracted.cabinets?.forEach(c => { if(!c.depth) c.depth = c.row==="wall"?12:24; if(!c.height) c.height = c.row==="wall"?30:34.5; if(!c.width) c.width=24; });
+      setSpec(extracted);
+      setMode("loaded");
+      setTab("render");
+    } catch(err) {
+      setJsonError(String(err.message));
+      setUploadStatus("");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const reset = () => { setSpec(null); setMode("home"); setJsonInput(""); setJsonError(null); setVer(0); setWireframePreview(null); setUploadStatus(""); };
 
   const hasSpec = spec?.cabinets?.length > 0;
 
@@ -311,17 +345,26 @@ export default function App() {
         {mode === "home" && (
           <div style={{maxWidth:700}}>
             <p style={{color:"#777",fontSize:13,marginTop:0,marginBottom:16}}>
-              Load a cabinet spec to render and edit. Change W, H, D on any cabinet and see the 2.5D wireframe update.
+              Upload a wireframe image to extract cabinet specs, or paste JSON directly.
             </p>
 
+            <div style={{background:"#0c0c14",border:"2px dashed #2a2a3a",borderRadius:12,padding:24,textAlign:"center",marginBottom:20}}>
+              <div style={{fontSize:14,fontWeight:700,color:"#eee",marginBottom:8}}>Upload Wireframe Image</div>
+              <div style={{fontSize:11,color:"#666",marginBottom:12}}>PNG, JPG, or WebP — the AI will extract cabinet specs automatically</div>
+              <input type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading}
+                style={{display:"block",margin:"0 auto"}} />
+              {uploading && <div style={{marginTop:12,color:"#D94420",fontSize:12,fontWeight:600}}>{uploadStatus}</div>}
+              {wireframePreview && !uploading && uploadStatus && <div style={{marginTop:8,color:"#22c55e",fontSize:11}}>{uploadStatus}</div>}
+            </div>
+
             <button onClick={loadWireframe} style={{
-              background:"linear-gradient(135deg,#D94420,#e07020)",color:"#fff",border:"none",
-              padding:"14px 24px",borderRadius:10,fontSize:14,fontWeight:700,cursor:"pointer",
-              fontFamily:"inherit",boxShadow:"0 4px 20px #D9442044",display:"block",marginBottom:16
+              background:"#1a1a2a",color:"#aaa",border:"1px solid #2a2a3a",
+              padding:"10px 20px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",
+              fontFamily:"inherit",display:"block",marginBottom:16
             }}>
-              Load Wireframe Extraction
+              Load Built-in Example
             </button>
-            <div style={{fontSize:11,color:"#555",marginBottom:20}}>Pre-extracted from the uploaded wireframe: 5 base cabs, 7 wall cabs, range opening</div>
+            <div style={{fontSize:11,color:"#555",marginBottom:20}}>Pre-extracted: 5 base cabs, 7 wall cabs, range opening</div>
 
             <div style={{borderTop:"1px solid #1a1a2a",paddingTop:16}}>
               <div style={{fontSize:12,color:"#888",marginBottom:8,fontWeight:600}}>Or paste your own JSON spec:</div>
