@@ -1,0 +1,83 @@
+{
+  "project": {
+    "name": "Master Bath Vanity",
+    "client": "Johnson Residence",
+    "job_number": "2026-0052",
+    "room": "bathroom",
+    "units": "inches",
+    "date": "2026-03-21"
+  },
+  "defaults": {
+    "construction": "face_frame",
+    "box_material": "3/4 maple plywood",
+    "box_thickness": 0.75,
+    "back_panel": { "material": "1/4 maple ply", "thickness": 0.25, "method": "dado" },
+    "face_frame": { "material": "hard maple", "stile_width": 1.5, "rail_width": 1.5, "attachment": "mortise_tenon" },
+    "door": { "style": "shaker", "overlay": "inset", "material": "hard maple", "thickness": 0.75, "reveal": 0.09375 },
+    "drawer": { "box_material": "1/2 maple", "slide_type": "undermount", "soft_close": true, "joinery": "dovetail" },
+    "hinge": { "type": "concealed_euro", "soft_close": true },
+    "hardware": { "pull_type": "knob", "pull_finish": "unlacquered_brass" },
+    "finish": { "type": "stain", "color": "Minwax Provincial", "sheen": "satin", "species": "hard maple" },
+    "toe_kick": { "height": 4, "depth": 3, "type": "integral" },
+    "shelf": { "material": "3/4 maple ply", "adjustable": true },
+    "standard_depths": { "vanity": 21 },
+    "standard_heights": { "vanity": 34.5 }
+  },
+  "runs": [
+    {
+      "id": "vanity_main",
+      "label": "His & Hers Vanity",
+      "wall_length": 96,
+      "countertop": {
+        "material": "marble",
+        "thickness": 1.25,
+        "overhang_front": 1,
+        "edge_profile": "eased",
+        "cutouts": [
+          { "type": "sink", "offset_from_left": 6, "width": 20, "depth": 17 },
+          { "type": "sink", "offset_from_left": 70, "width": 20, "depth": 17 }
+        ]
+      },
+      "cabinets": [
+        {
+          "id": "V1", "type": "vanity_sink", "label": "Her Sink", "row": "base", "width": 30,
+          "face": { "sections": [
+            { "type": "false_front", "count": 1, "height": 5 },
+            { "type": "door", "count": 2 }
+          ]},
+          "interior": { "accessories": ["pull_out_waste"] },
+          "end_panels": { "left": "finished" }
+        },
+        {
+          "id": "V2", "type": "vanity_drawer", "label": "Center Drawer Tower", "row": "base", "width": 18,
+          "face": { "sections": [
+            { "type": "drawer", "count": 1, "height": 5 },
+            { "type": "drawer", "count": 1, "height": 7 },
+            { "type": "drawer", "count": 1, "height": 7 },
+            { "type": "drawer", "count": 1, "height": 10 }
+          ]},
+          "interior": { "accessories": ["cutlery_divider"] },
+          "notes": "Top drawer gets velvet-lined jewelry insert"
+        },
+        {
+          "id": "V3", "type": "vanity_sink", "label": "His Sink", "row": "base", "width": 30,
+          "face": { "sections": [
+            { "type": "false_front", "count": 1, "height": 5 },
+            { "type": "door", "count": 2 }
+          ]},
+          "interior": { "accessories": ["pull_out_waste"] },
+          "end_panels": { "right": "finished" }
+        },
+        {
+          "id": "LT1", "type": "linen_tower", "label": "Linen Tower", "row": "tall", "width": 18, "height": 84,
+          "face": { "sections": [
+            { "type": "door", "count": 1, "hinge_side": "right" }
+          ]},
+          "interior": { "shelves": 5, "rollouts": 1 },
+          "end_panels": { "left": "finished", "right": "finished" },
+          "notes": "Freestanding next to vanity run. Bottom rollout for hamper."
+        }
+      ]
+    }
+  ]
+}
