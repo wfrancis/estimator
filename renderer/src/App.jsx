@@ -1,4 +1,8 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useRef } from "react";
+import useSpecState from "./state/useSpecState";
+import InteractiveRender from "./editor/InteractiveRender";
+import GridEditor from "./editor/GridEditor";
+import { defaultCabinet, generateId } from "./state/specHelpers";
 
 // ═══════════════════════════════════════════════════════════
 // PRE-EXTRACTED SPEC — from the uploaded wireframe image
@@ -121,11 +125,13 @@ function Render({ spec }) {
   const bMap = {}; baseItems.forEach(b => { bMap[b.id] = b; });
 
   const aMap = {}; (spec.alignment||[]).forEach(a => { aMap[a.wall] = a.base; });
-  const wallItems = []; let wx = PAD;
+  const wallItems = []; let wx = PAD; let prevWasGap = false;
   (spec.wall_layout||[]).forEach(item => {
     const id = item.ref||item.id, cab = cabMap[id], w = cab?cab.width:(item.width||30);
-    if (aMap[id] && bMap[aMap[id]]) wx = bMap[aMap[id]].x;
+    // Only apply alignment if no explicit filler/gap precedes this cabinet
+    if (!prevWasGap && aMap[id] && bMap[aMap[id]]) wx = bMap[aMap[id]].x;
     wallItems.push({ id, x:wx, w, cab, item }); wx += w*SC;
+    prevWasGap = !item.ref;
   });
 
   const maxWH = Math.max(...wallItems.filter(w=>w.cab).map(w=>(w.cab.height||30)), 30)*SC;
@@ -146,6 +152,15 @@ function Render({ spec }) {
 
         {baseItems.map(bi => {
           if (!bi.cab) {
+            const isFiller = bi.item?.type === "filler";
+            if (isFiller) {
+              // Filler: just empty space with a thin dashed line
+              const cy = FLOOR-TOE-34.5*SC;
+              return (<g key={`f-${bi.id}-${bi.x}`}>
+                <line x1={bi.x+bi.w*SC/2} y1={cy} x2={bi.x+bi.w*SC/2} y2={FLOOR} stroke="#ccc" strokeWidth={0.5} strokeDasharray="3,3"/>
+                <text x={bi.x+bi.w*SC/2} y={FLOOR+13} textAnchor="middle" fontSize={6} fill="#bbb" fontFamily="monospace">{bi.w}"</text>
+              </g>);
+            }
             const isFridge = bi.id==="fridge"||bi.item?.label?.toLowerCase()?.includes("fridge");
             const h = isFridge?70:34.5, cy = isFridge?(FLOOR-h*SC):(FLOOR-TOE-34.5*SC);
             return (<g key={`a-${bi.id}`}>
@@ -168,6 +183,14 @@ function Render({ spec }) {
 
         {wallItems.map(wi => {
           if (!wi.cab) {
+            const isFiller = wi.item?.type === "filler";
+            if (isFiller) {
+              // Filler: just empty space with a thin dashed line
+              return (<g key={`wf-${wi.id}-${wi.x}`}>
+                <line x1={wi.x+wi.w*SC/2} y1={WTOP} x2={wi.x+wi.w*SC/2} y2={WBOT} stroke="#ccc" strokeWidth={0.5} strokeDasharray="3,3"/>
+                <text x={wi.x+wi.w*SC/2} y={WTOP-5} textAnchor="middle" fontSize={6} fill="#bbb" fontFamily="monospace">{wi.w}"</text>
+              </g>);
+            }
             const hh=16, hy=WBOT+8;
             return (<g key={`h-${wi.id}`}>
               <rect x={wi.x+6} y={hy} width={Math.max(wi.w*SC-12,1)} height={hh} fill="#f4f4f4" stroke="#aaa" strokeWidth={0.7} rx={3}/>
@@ -194,68 +217,13 @@ function Render({ spec }) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// EDITOR
-// ═══════════════════════════════════════════════════════════
-function Editor({ spec, onChange }) {
-  const [ed, setEd] = useState({});
-  const gv = (id,f,cur) => { const k=`${id}.${f}`; return k in ed ? ed[k] : cur; };
-  const onF = (id,f,v) => setEd(p=>({...p,[`${id}.${f}`]:String(v)}));
-  const onB = (id,f) => setEd(p=>{ const n={...p}; delete n[`${id}.${f}`]; return n; });
-  const onC = (id,f,raw) => { setEd(p=>({...p,[`${id}.${f}`]:raw})); const v=parseFloat(raw); if(!isNaN(v)&&v>0){const s=JSON.parse(JSON.stringify(spec));const c=s.cabinets.find(x=>x.id===id);if(c){c[f]=v;onChange(s);}}};
-
-  const inp = (id,f,cur,label) => (
-    <label key={f} style={{display:"flex",alignItems:"center",gap:3,color:"#888",fontSize:10}}>
-      {label}
-      <input type="number" value={gv(id,f,cur)} onFocus={()=>onF(id,f,cur)} onChange={e=>onC(id,f,e.target.value)} onBlur={()=>onB(id,f)}
-        style={{width:42,background:"#14141e",border:"1px solid #2a2a3a",borderRadius:4,color:"#e0e0e0",padding:"2px 4px",fontSize:11,fontFamily:"'JetBrains Mono',monospace",textAlign:"center"}}/>
-    </label>
-  );
-
-  const badge = (sec,i) => (
-    <span key={i} style={{display:"inline-block",fontSize:9,padding:"1px 5px",marginRight:3,borderRadius:3,fontFamily:"'JetBrains Mono',monospace",
-      background:sec.type==="drawer"?"#f972161a":sec.type==="false_front"?"#8b5cf61a":"#22c55e1a",
-      color:sec.type==="drawer"?"#f97216":sec.type==="false_front"?"#8b5cf6":"#22c55e"}}>
-      {sec.type}{sec.count>1?`x${sec.count}`:""}{sec.height?` ${sec.height}"`:""}{sec.hinge_side?` ${sec.hinge_side}`:""}
-    </span>
-  );
-
-  const card = (cab,color) => (
-    <div key={cab.id} style={{background:"#0c0c14",borderRadius:8,padding:"8px 10px",marginBottom:5,border:"1px solid #1a1a2a"}}>
-      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
-        <span style={{color,fontWeight:700,fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}>{cab.id}</span>
-        <span style={{color:"#555",fontSize:10,fontFamily:"'JetBrains Mono',monospace"}}>{cab.type}</span>
-        <span style={{color:"#333",flex:1,textAlign:"right",fontSize:9}}>{cab.label}</span>
-      </div>
-      <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-        {inp(cab.id,"width",cab.width,"W")}{inp(cab.id,"height",cab.height,"H")}{inp(cab.id,"depth",cab.depth,"D")}
-      </div>
-      <div style={{marginTop:4}}>{(cab.face?.sections||[]).map(badge)}</div>
-    </div>
-  );
-
-  return (
-    <div style={{fontSize:12,overflow:"auto",maxHeight:"calc(100vh - 140px)"}}>
-      <div style={{color:"#D94420",fontWeight:700,fontSize:10,letterSpacing:"0.08em",marginBottom:5,fontFamily:"'JetBrains Mono',monospace"}}>BASE</div>
-      {spec.cabinets.filter(c=>c.row==="base").map(c=>card(c,"#D94420"))}
-      {(spec.base_layout||[]).filter(i=>!i.ref).length>0 && <div style={{color:"#e07020",fontWeight:700,fontSize:10,letterSpacing:"0.08em",margin:"8px 0 5px",fontFamily:"'JetBrains Mono',monospace"}}>APPLIANCES</div>}
-      {(spec.base_layout||[]).filter(i=>!i.ref).map((a,i)=>(
-        <div key={i} style={{background:"#0c0c14",borderRadius:8,padding:"6px 10px",marginBottom:5,border:"1px solid #1a1a2a",fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
-          <span style={{color:"#e07020"}}>{(a.label||a.id).toUpperCase()}</span><span style={{color:"#555",marginLeft:8}}>{a.width}"</span>
-        </div>
-      ))}
-      <div style={{color:"#1a6fbf",fontWeight:700,fontSize:10,letterSpacing:"0.08em",margin:"8px 0 5px",fontFamily:"'JetBrains Mono',monospace"}}>WALL</div>
-      {spec.cabinets.filter(c=>c.row==="wall").map(c=>card(c,"#1a6fbf"))}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════
+const EMPTY_SPEC = { base_layout: [], wall_layout: [], alignment: [], cabinets: [] };
+
 export default function App() {
-  const [spec, setSpec] = useState(null);
+  const { spec, dispatch, undo, redo, canUndo, canRedo } = useSpecState(EMPTY_SPEC);
   const [tab, setTab] = useState("render");
-  const [ver, setVer] = useState(0);
   const [jsonInput, setJsonInput] = useState("");
   const [jsonError, setJsonError] = useState(null);
   const [mode, setMode] = useState("home"); // home | loaded
@@ -263,16 +231,20 @@ export default function App() {
   const [uploadStatus, setUploadStatus] = useState("");
   const [wireframePreview, setWireframePreview] = useState(null);
 
-  const update = (s) => { setSpec(s); setVer(v=>v+1); };
+  const [selectedId, setSelectedId] = useState(null);
+  const [selectedGapItem, setSelectedGapItem] = useState(null);
 
-  const loadWireframe = () => { setSpec(JSON.parse(JSON.stringify(WIREFRAME_SPEC))); setMode("loaded"); setTab("render"); };
+  // Ref to the width input in the bottom bar — passed to GridEditor for double-click focus
+  const widthInputRef = useRef(null);
+
+  const loadWireframe = () => { dispatch({ type: "LOAD_SPEC", spec: JSON.parse(JSON.stringify(WIREFRAME_SPEC)) }); setMode("loaded"); setTab("render"); };
 
   const loadJSON = () => {
     try {
       const parsed = JSON.parse(jsonInput);
       if (!parsed.cabinets?.length) throw new Error("No cabinets array found");
       parsed.cabinets.forEach(c => { if(!c.depth) c.depth = c.row==="wall"?12:24; if(!c.height) c.height = c.row==="wall"?30:34.5; if(!c.width) c.width=24; });
-      setSpec(parsed);
+      dispatch({ type: "LOAD_SPEC", spec: parsed });
       setMode("loaded");
       setTab("render");
       setJsonError(null);
@@ -299,7 +271,7 @@ export default function App() {
       const extracted = await resp.json();
       setUploadStatus(`Extracted ${extracted.cabinets?.length || 0} cabinets`);
       extracted.cabinets?.forEach(c => { if(!c.depth) c.depth = c.row==="wall"?12:24; if(!c.height) c.height = c.row==="wall"?30:34.5; if(!c.width) c.width=24; });
-      setSpec(extracted);
+      dispatch({ type: "LOAD_SPEC", spec: extracted });
       setMode("loaded");
       setTab("render");
     } catch(err) {
@@ -310,9 +282,28 @@ export default function App() {
     }
   };
 
-  const reset = () => { setSpec(null); setMode("home"); setJsonInput(""); setJsonError(null); setVer(0); setWireframePreview(null); setUploadStatus(""); };
+  const reset = () => {
+    dispatch({ type: "LOAD_SPEC", spec: { base_layout: [], wall_layout: [], alignment: [], cabinets: [] } });
+    setMode("home"); setJsonInput(""); setJsonError(null); setWireframePreview(null); setUploadStatus("");
+    setSelectedId(null); setSelectedGapItem(null);
+  };
 
-  const hasSpec = spec?.cabinets?.length > 0;
+  const handleSelect = (id) => {
+    setSelectedId(id);
+    if (id) setSelectedGapItem(null);
+  };
+
+  const handleGapSelect = (item) => {
+    setSelectedGapItem(item);
+    if (item) setSelectedId(null);
+  };
+
+  const hasSpec = mode === "loaded" && spec;
+
+  // Count cabinets (refs in layouts, not appliances)
+  const cabCount = hasSpec
+    ? [...(spec.base_layout||[]), ...(spec.wall_layout||[])].filter(i => i.ref).length
+    : 0;
 
   return (
     <div style={{minHeight:"100vh",background:"#06060c",color:"#ddd",fontFamily:"'DM Sans',-apple-system,sans-serif"}}>
@@ -402,12 +393,153 @@ export default function App() {
           </div>
         )}
 
-        {hasSpec && tab === "edit" && (
-          <div style={{display:"grid",gridTemplateColumns:"260px 1fr",gap:12}}>
-            <Editor spec={spec} onChange={update}/>
-            <Render spec={spec}/>
-          </div>
-        )}
+        {hasSpec && tab === "edit" && (() => {
+          const cabMap = {};
+          (spec.cabinets || []).forEach(c => { cabMap[c.id] = c; });
+          const sel = selectedId ? cabMap[selectedId] : null;
+          const selColor = sel?.row === "wall" ? "#1a6fbf" : "#D94420";
+          const baseRun = (spec.base_layout||[]).reduce((s,i)=>s+(i.ref?cabMap[i.ref]?.width||0:i.width||0),0);
+          const wallRun = (spec.wall_layout||[]).reduce((s,i)=>s+(i.ref?cabMap[i.ref]?.width||0:i.width||0),0);
+
+          return (
+            <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 50px)",margin:"-14px -20px 0",padding:0}}>
+              {/* Toolbar — compact */}
+              <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",background:"#06060c",borderBottom:"1px solid #1a1a2a",flexShrink:0,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
+                <button onClick={undo} disabled={!canUndo} style={{background:canUndo?"#1a1a2a":"transparent",border:"1px solid #2a2a3a",color:canUndo?"#e0e0e0":"#333",padding:"4px 10px",borderRadius:4,fontSize:11,cursor:canUndo?"pointer":"default",fontWeight:600}}>Undo</button>
+                <button onClick={redo} disabled={!canRedo} style={{background:canRedo?"#1a1a2a":"transparent",border:"1px solid #2a2a3a",color:canRedo?"#e0e0e0":"#333",padding:"4px 10px",borderRadius:4,fontSize:11,cursor:canRedo?"pointer":"default",fontWeight:600}}>Redo</button>
+                <span style={{flex:1}}/>
+                {/* #3: Cabinet count */}
+                <span style={{color:"#555",fontWeight:600}}>{cabCount} cabs</span>
+                <span style={{color:"#333"}}>|</span>
+                <span style={{color:"#D94420",fontWeight:600}}>B:{baseRun}"</span>
+                <span style={{color:"#333"}}>|</span>
+                <span style={{color:"#1a6fbf",fontWeight:600}}>W:{wallRun}"</span>
+              </div>
+
+              {/* Grid — the editor. Click to select. Drag to reorder. Edge-drag to resize. */}
+              <div style={{flex:"1 1 auto",overflow:"auto"}}>
+                <GridEditor
+                  spec={spec}
+                  selectedId={selectedId}
+                  onSelect={handleSelect}
+                  dispatch={dispatch}
+                  widthInputRef={widthInputRef}
+                  onGapSelect={handleGapSelect}
+                  selectedGapItem={selectedGapItem}
+                  undo={undo}
+                  redo={redo}
+                />
+              </div>
+
+              {/* Bottom bar — gap selected */}
+              {selectedGapItem && !sel && (
+                <div key={`gap-${selectedGapItem.rowName}-${selectedGapItem.idx}`} style={{flexShrink:0,background:"#0c0c14",borderTop:"1px solid #1a1a2a",padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
+                  <input
+                    type="text"
+                    defaultValue={selectedGapItem.entry?.label||"Opening"}
+                    onFocus={e=>e.target.select()}
+                    onBlur={e=>{const v=e.target.value.trim();if(v)dispatch({type:"UPDATE_GAP",row:selectedGapItem.rowName,position:selectedGapItem.idx,updates:{label:v}});}}
+                    onKeyDown={e=>{if(e.key==="Enter"){e.target.blur();}if(e.key==="Escape")setSelectedGapItem(null);}}
+                    style={{width:100,height:36,background:"#14141e",border:"1px solid #2a2a3a",borderRadius:6,color:"#888",fontSize:13,textAlign:"center",fontFamily:"'JetBrains Mono',monospace",fontWeight:700}}
+                  />
+                  <input
+                    type="number"
+                    defaultValue={selectedGapItem.w||0}
+                    onFocus={e=>e.target.select()}
+                    onKeyDown={e=>{
+                      if(e.key==="Enter"){const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0){dispatch({type:"UPDATE_GAP",row:selectedGapItem.rowName,position:selectedGapItem.idx,updates:{width:v}});e.target.blur();}}
+                      if(e.key==="Escape")setSelectedGapItem(null);
+                    }}
+                    onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0)dispatch({type:"UPDATE_GAP",row:selectedGapItem.rowName,position:selectedGapItem.idx,updates:{width:v}});}}
+                    style={{width:64,height:36,background:"#14141e",border:"2px solid #555",borderRadius:6,color:"#fff",fontSize:16,textAlign:"center",fontFamily:"'JetBrains Mono',monospace",fontWeight:700}}
+                  />
+                  <span style={{color:"#555",fontSize:14,fontFamily:"'JetBrains Mono',monospace"}}>w</span>
+                  <span style={{flex:1}}/>
+                  <button onClick={()=>{dispatch({type:"DELETE_GAP",row:selectedGapItem.rowName,position:selectedGapItem.idx});setSelectedGapItem(null);}} style={{height:32,padding:"0 10px",borderRadius:6,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#e04040",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Del</button>
+                  <button onClick={()=>setSelectedGapItem(null)} style={{height:32,padding:"0 10px",borderRadius:6,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#666",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Close</button>
+                </div>
+              )}
+
+              {/* Bottom bar — cabinet selected */}
+              {sel && !selectedGapItem && (
+                <div style={{flexShrink:0,background:"#0c0c14",borderTop:"1px solid #1a1a2a",padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{color:selColor,fontWeight:700,fontSize:16,fontFamily:"'JetBrains Mono',monospace"}}>{sel.id}</span>
+                  <span style={{color:"#555",fontSize:10,fontFamily:"'JetBrains Mono',monospace"}}>{sel.type.replace(/_/g," ")}</span>
+                  <input
+                    ref={widthInputRef}
+                    key={sel.id}
+                    type="number"
+                    defaultValue={sel.width}
+                    onFocus={e=>e.target.select()}
+                    onKeyDown={e=>{if(e.key==="Enter"){const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0){dispatch({type:"SET_DIMENSION",id:sel.id,field:"width",value:v});
+                      // Advance to next cabinet
+                      const allRefs=[...(spec.base_layout||[]),...(spec.wall_layout||[])].filter(i=>i.ref);
+                      const idx=allRefs.findIndex(i=>i.ref===sel.id);
+                      if(idx!==-1&&idx<allRefs.length-1){setSelectedId(allRefs[idx+1].ref);setTimeout(()=>{if(widthInputRef.current){widthInputRef.current.focus();widthInputRef.current.select();}},50);}else{e.target.blur();}
+                    }}}}
+                    onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0&&v!==sel.width)dispatch({type:"SET_DIMENSION",id:sel.id,field:"width",value:v});}}
+                    style={{width:64,height:36,background:"#14141e",border:`2px solid ${selColor}`,borderRadius:6,color:"#fff",fontSize:16,textAlign:"center",fontFamily:"'JetBrains Mono',monospace",fontWeight:700}}
+                  />
+                  <span style={{color:"#555",fontSize:14,fontFamily:"'JetBrains Mono',monospace"}}>w</span>
+                  <input
+                    key={sel.id+"h"}
+                    type="number"
+                    defaultValue={sel.height}
+                    onFocus={e=>e.target.select()}
+                    onKeyDown={e=>{if(e.key==="Enter"){const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0){dispatch({type:"SET_DIMENSION",id:sel.id,field:"height",value:v});e.target.blur();}}}}
+                    onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0&&v!==sel.height)dispatch({type:"SET_DIMENSION",id:sel.id,field:"height",value:v});}}
+                    style={{width:52,height:36,background:"#14141e",border:"1px solid #2a2a3a",borderRadius:6,color:"#aaa",fontSize:14,textAlign:"center",fontFamily:"'JetBrains Mono',monospace"}}
+                  />
+                  <span style={{color:"#555",fontSize:14,fontFamily:"'JetBrains Mono',monospace"}}>h</span>
+                  <input
+                    key={sel.id+"d"}
+                    type="number"
+                    defaultValue={sel.depth}
+                    onFocus={e=>e.target.select()}
+                    onKeyDown={e=>{if(e.key==="Enter"){const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0){dispatch({type:"SET_DIMENSION",id:sel.id,field:"depth",value:v});e.target.blur();}}}}
+                    onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0&&v!==sel.depth)dispatch({type:"SET_DIMENSION",id:sel.id,field:"depth",value:v});}}
+                    style={{width:52,height:36,background:"#14141e",border:"1px solid #2a2a3a",borderRadius:6,color:"#aaa",fontSize:14,textAlign:"center",fontFamily:"'JetBrains Mono',monospace"}}
+                  />
+                  <span style={{color:"#555",fontSize:14,fontFamily:"'JetBrains Mono',monospace"}}>d</span>
+                  <span style={{flex:1}}/>
+                  {/* #10: Keyboard shortcut hints */}
+                  <span style={{color:"#333",fontSize:9,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.4}}>
+                    ← → move &nbsp; Tab next &nbsp; Esc deselect &nbsp; Cmd+D dup
+                  </span>
+                  <button onClick={()=>{
+                    const layout=spec[sel.row==="base"?"base_layout":"wall_layout"]||[];
+                    const pos=layout.findIndex(i=>i.ref===sel.id);
+                    dispatch({type:"ADD_GAP",row:sel.row,position:Math.max(pos,0),gap:{type:"filler",label:"Filler",width:3}});
+                  }} style={{height:36,padding:"0 10px",borderRadius:6,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#888",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Filler</button>
+                  <button onClick={()=>{
+                    const id=generateId(sel.row,spec),cab=defaultCabinet(sel.row);cab.id=id;
+                    const layout=spec[sel.row==="base"?"base_layout":"wall_layout"]||[];
+                    const pos=layout.findIndex(i=>i.ref===sel.id);
+                    dispatch({type:"ADD_CABINET",row:sel.row,position:pos+1,cabinet:cab});setSelectedId(id);
+                  }} style={{height:36,padding:"0 10px",borderRadius:6,background:"#1a1a2a",border:"1px solid #2a2a3a",color:selColor,fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>+ Cab</button>
+                  <button onClick={()=>{dispatch({type:"DELETE_CABINET",id:sel.id});setSelectedId(null);}} style={{height:36,padding:"0 10px",borderRadius:6,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#e04040",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Del</button>
+                </div>
+              )}
+
+              {/* Bottom bar — nothing selected */}
+              {!sel && !selectedGapItem && (
+                <div style={{flexShrink:0,background:"#0c0c14",borderTop:"1px solid #1a1a2a",padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{color:"#444",fontSize:12,fontFamily:"'DM Sans',sans-serif"}}>Click to edit. Drag to reorder.</span>
+                  <span style={{color:"#333",fontSize:9,fontFamily:"'JetBrains Mono',monospace"}}>Esc deselect</span>
+                  <span style={{flex:1}}/>
+                  <button onClick={()=>{
+                    const id=generateId("base",spec),cab=defaultCabinet("base");cab.id=id;
+                    dispatch({type:"ADD_CABINET",row:"base",position:(spec.base_layout||[]).length,cabinet:cab});setSelectedId(id);
+                  }} style={{height:32,padding:"0 10px",borderRadius:6,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#D94420",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>+ Base</button>
+                  <button onClick={()=>{
+                    const id=generateId("wall",spec),cab=defaultCabinet("wall");cab.id=id;
+                    dispatch({type:"ADD_CABINET",row:"wall",position:(spec.wall_layout||[]).length,cabinet:cab});setSelectedId(id);
+                  }} style={{height:32,padding:"0 10px",borderRadius:6,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#1a6fbf",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>+ Wall</button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {hasSpec && tab === "json" && (
           <pre style={{background:"#0a0a14",border:"1px solid #1a1a2a",borderRadius:10,
