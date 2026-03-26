@@ -193,6 +193,7 @@ function GapEditBar({ item, rowName, dispatch, onClose }) {
 export default function GridEditor({ spec, selectedId, onSelect, dispatch, widthInputRef, onGapSelect, selectedGapItem, undo, redo }) {
   const svgRef = useRef(null);
   const [drag, setDrag] = useState(null);
+  const dragRef = useRef(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 40, y: 0 });
   const [hoverId, setHoverId] = useState(null);
@@ -262,12 +263,24 @@ export default function GridEditor({ spec, selectedId, onSelect, dispatch, width
 
         if (e.key === "ArrowLeft") {
           e.preventDefault();
-          dispatch({ type: "MOVE_CABINET", id: selectedId, direction: "left" });
+          if (e.metaKey || e.ctrlKey) {
+            // Cmd+Arrow = reorder (swap position in layout)
+            dispatch({ type: "MOVE_CABINET", id: selectedId, direction: "left" });
+          } else {
+            // Arrow = nudge position (shrink gap before cabinet)
+            const step = e.shiftKey ? 0.5 : 1;
+            dispatch({ type: "NUDGE_CABINET", id: selectedId, amount: -step });
+          }
           return;
         }
         if (e.key === "ArrowRight") {
           e.preventDefault();
-          dispatch({ type: "MOVE_CABINET", id: selectedId, direction: "right" });
+          if (e.metaKey || e.ctrlKey) {
+            dispatch({ type: "MOVE_CABINET", id: selectedId, direction: "right" });
+          } else {
+            const step = e.shiftKey ? 0.5 : 1;
+            dispatch({ type: "NUDGE_CABINET", id: selectedId, amount: step });
+          }
           return;
         }
         if (e.key === "Delete" || e.key === "Backspace") {
@@ -338,73 +351,95 @@ export default function GridEditor({ spec, selectedId, onSelect, dispatch, width
 
     if (nearHandle && item.id === selectedId) {
       setDrag({ type: "resize", cabId: item.id, startX: pt.x, startWidth: item.w, row });
-      e.target.setPointerCapture?.(e.pointerId);
     } else {
-      setDrag({ type: "move", cabId: item.id, startX: pt.x, origX: item.x, row, idx: item.idx, liveIdx: item.idx });
-      e.target.setPointerCapture?.(e.pointerId);
+      setDrag({ type: "move", cabId: item.id, startX: pt.x, origX: item.x, row, idx: item.idx, liveIdx: item.idx, dx: 0 });
     }
   }, [onSelect, onGapSelect, toSvg, pan.x, scale, selectedId]);
 
-  const onPointerMove = useCallback((e) => {
-    if (!drag) {
-      // Update hover cursor state
+  // Hover detection (non-drag) on SVG
+  const onSvgPointerMove = useCallback((e) => {
+    if (drag) return; // handled by window listener during drag
+    const pt = toSvg(e);
+    const allRows = [
+      { items: wallRow.items, rowY: wallY, blockH: BLOCK_H_WALL },
+      { items: baseRow.items, rowY: baseY, blockH: BLOCK_H_BASE },
+    ];
+    let foundHover = null;
+    let foundEdge = false;
+    for (const { items, rowY, blockH } of allRows) {
+      for (const item of items) {
+        if (item.isGap) continue;
+        const bx = pan.x + item.x;
+        const bw = item.w * scale;
+        if (pt.x >= bx && pt.x <= bx + bw && pt.y >= rowY && pt.y <= rowY + blockH) {
+          foundHover = item.id;
+          foundEdge = item.id === selectedId && Math.abs(pt.x - (bx + bw)) < HANDLE_W * 2;
+          break;
+        }
+      }
+    }
+    setHoverId(foundHover);
+    setHoverEdge(foundEdge);
+  }, [drag, toSvg, wallRow.items, baseRow.items, pan.x, scale, selectedId, wallY, baseY]);
+
+  // Keep dragRef in sync so handleUp can read latest state
+  useEffect(() => { dragRef.current = drag; }, [drag]);
+
+  // Window-level drag handlers — always receive events regardless of pointer capture
+  useEffect(() => {
+    if (!drag) return;
+    const handleMove = (e) => {
       const pt = toSvg(e);
-      // Check all blocks
-      const allRows = [
-        { items: wallRow.items, rowY: wallY, blockH: BLOCK_H_WALL },
-        { items: baseRow.items, rowY: baseY, blockH: BLOCK_H_BASE },
-      ];
-      let foundHover = null;
-      let foundEdge = false;
-      for (const { items, rowY, blockH } of allRows) {
-        for (const item of items) {
-          if (item.isGap) continue;
-          const bx = pan.x + item.x;
-          const bw = item.w * scale;
-          if (pt.x >= bx && pt.x <= bx + bw && pt.y >= rowY && pt.y <= rowY + blockH) {
-            foundHover = item.id;
-            foundEdge = item.id === selectedId && Math.abs(pt.x - (bx + bw)) < HANDLE_W * 2;
-            break;
+      const d = dragRef.current;
+      if (!d) return;
+      const dx = pt.x - d.startX;
+      if (d.type === "resize") {
+        const rawW = d.startWidth + dx / scale;
+        const clamped = Math.max(6, Math.min(60, rawW));
+        setDrag(prev => prev ? { ...prev, liveW: clamped } : null);
+      } else if (d.type === "move") {
+        const layout = d.row === "wall" ? wallRow.items : baseRow.items;
+        const offsetX = d.origX + dx;
+        const centerX = offsetX + (cabMap[d.cabId]?.width || 18) * scale / 2;
+        let targetIdx = 0;
+        for (let i = 0; i < layout.length; i++) {
+          const mid = layout[i].x + layout[i].w * scale / 2;
+          if (centerX > mid) targetIdx = i + 1;
+        }
+        if (targetIdx > d.idx) targetIdx = Math.min(targetIdx - 1, layout.length - 1);
+        else targetIdx = Math.max(targetIdx, 0);
+        setDrag(prev => prev ? { ...prev, liveIdx: targetIdx, dx } : null);
+      }
+    };
+    const handleUp = () => {
+      const d = dragRef.current;
+      if (!d) { setDrag(null); return; }
+      if (d.type === "resize" && d.liveW != null) {
+        const snapped = Math.round(d.liveW);
+        dispatch({ type: "SET_DIMENSION", id: d.cabId, field: "width", value: Math.max(3, snapped) });
+      } else if (d.type === "move") {
+        if (d.liveIdx !== d.idx) {
+          dispatch({ type: "REORDER_CABINET", id: d.cabId, toIndex: d.liveIdx });
+        } else if (d.dx) {
+          const nudgeInches = Math.round(d.dx / scale);
+          if (nudgeInches !== 0) {
+            dispatch({ type: "NUDGE_CABINET", id: d.cabId, amount: nudgeInches });
           }
         }
       }
-      setHoverId(foundHover);
-      setHoverEdge(foundEdge);
-      return;
-    }
-
-    const pt = toSvg(e);
-    const dx = pt.x - drag.startX;
-
-    if (drag.type === "resize") {
-      const rawW = drag.startWidth + dx / scale;
-      const clamped = Math.max(6, Math.min(60, rawW));
-      setDrag(d => ({ ...d, liveW: clamped }));
-    } else if (drag.type === "move") {
-      const layout = drag.row === "wall" ? wallRow.items : baseRow.items;
-      const offsetX = drag.origX + dx;
-      const centerX = offsetX + (cabMap[drag.cabId]?.width || 18) * scale / 2;
-      let targetIdx = 0;
-      for (let i = 0; i < layout.length; i++) {
-        const mid = layout[i].x + layout[i].w * scale / 2;
-        if (centerX > mid) targetIdx = i + 1;
-      }
-      if (targetIdx > drag.idx) targetIdx = Math.min(targetIdx - 1, layout.length - 1);
-      else targetIdx = Math.max(targetIdx, 0);
-      setDrag(d => ({ ...d, liveIdx: targetIdx, dx }));
-    }
-  }, [drag, toSvg, scale, wallRow.items, baseRow.items, cabMap, pan.x, selectedId, wallY, baseY]);
-
-  const onPointerUp = useCallback(() => {
-    if (!drag) return;
-    if (drag.type === "resize" && drag.liveW != null) {
-      const snapped = Math.round(drag.liveW * 4) / 4;
-      dispatch({ type: "SET_DIMENSION", id: drag.cabId, field: "width", value: Math.max(3, snapped) });
-    } else if (drag.type === "move" && drag.liveIdx !== drag.idx) {
-      dispatch({ type: "REORDER_CABINET", id: drag.cabId, toIndex: drag.liveIdx });
-    }
-    setDrag(null);
-  }, [drag, dispatch]);
+      setDrag(null);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+    return () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleUp);
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+  }, [drag, toSvg, scale, wallRow.items, baseRow.items, cabMap, dispatch]);
 
   // Double-click: focus width input for cabinets, or prompt for gaps
   const onDblClickBlock = useCallback((e, item, row) => {
@@ -568,26 +603,46 @@ export default function GridEditor({ spec, selectedId, onSelect, dispatch, width
       if (item.isGap) {
         const gColor = isGapSelected ? COLORS.gapSelected : COLORS.gap;
         const gFill = isGapSelected ? COLORS.gapSelectedFill : COLORS.gapFill;
+        const hasLabel = item.entry.label && item.entry.label.length > 0;
+        const isSpacer = !hasLabel; // auto-created spacer from nudging
         return (
           <g key={`gap-${rowName}-${item.idx}`}
             onPointerDown={(e) => onPointerDownBlock(e, item, rowName)}
             onDoubleClick={(e) => onDblClickBlock(e, item, rowName)}
             onContextMenu={(e) => e.preventDefault()}
             style={{ cursor: "pointer" }}>
-            <rect x={bx} y={rowY} width={bw} height={blockH}
-              fill={gFill} stroke={gColor}
-              strokeWidth={isGapSelected ? 2 : 1}
-              strokeDasharray={COLORS.gapDash} rx={3} />
-            <text x={bx + bw / 2} y={rowY + blockH / 2 - 4}
-              fill={gColor} fontSize={8} textAnchor="middle"
-              fontFamily="'JetBrains Mono',monospace">
-              {(item.entry.label || "GAP").toUpperCase()}
-            </text>
-            <text x={bx + bw / 2} y={rowY + blockH / 2 + 10}
-              fill={COLORS.dimLabel} fontSize={9} textAnchor="middle"
-              fontFamily="'JetBrains Mono',monospace">
-              {item.w}"
-            </text>
+            {isSpacer ? (
+              /* Minimal spacer — just a thin dashed outline with width label */
+              <>
+                <rect x={bx} y={rowY} width={bw} height={blockH}
+                  fill="transparent" stroke={isGapSelected ? COLORS.gapSelected : "#222"}
+                  strokeWidth={isGapSelected ? 2 : 0.5}
+                  strokeDasharray="4,4" rx={2} />
+                <text x={bx + bw / 2} y={rowY + blockH / 2 + 3}
+                  fill={isGapSelected ? COLORS.gapSelected : "#333"} fontSize={9} textAnchor="middle"
+                  fontFamily="'JetBrains Mono',monospace">
+                  {item.w}"
+                </text>
+              </>
+            ) : (
+              /* Named gap (Range, Hood, etc.) — full dashed box */
+              <>
+                <rect x={bx} y={rowY} width={bw} height={blockH}
+                  fill={gFill} stroke={gColor}
+                  strokeWidth={isGapSelected ? 2 : 1}
+                  strokeDasharray={COLORS.gapDash} rx={3} />
+                <text x={bx + bw / 2} y={rowY + blockH / 2 - 4}
+                  fill={gColor} fontSize={8} textAnchor="middle"
+                  fontFamily="'JetBrains Mono',monospace">
+                  {item.entry.label.toUpperCase()}
+                </text>
+                <text x={bx + bw / 2} y={rowY + blockH / 2 + 10}
+                  fill={COLORS.dimLabel} fontSize={9} textAnchor="middle"
+                  fontFamily="'JetBrains Mono',monospace">
+                  {item.w}"
+                </text>
+              </>
+            )}
           </g>
         );
       }
@@ -663,7 +718,7 @@ export default function GridEditor({ spec, selectedId, onSelect, dispatch, width
               fill={COLORS.tooltip} fontSize={11} fontWeight={700}
               fontFamily="'JetBrains Mono',monospace"
               style={{ pointerEvents: "none" }}>
-              {"\u2192"} {Math.round(drag.liveW * 4) / 4}"
+              {"\u2192"} {Math.round(drag.liveW)}"
             </text>
           )}
         </g>
@@ -732,9 +787,7 @@ export default function GridEditor({ spec, selectedId, onSelect, dispatch, width
         style={{ display: "block", minWidth: svgW, minHeight: svgH, cursor: svgCursor }}
         onWheel={onWheel}
         onPointerDown={onSvgPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerLeave={onPointerUp}
+        onPointerMove={onSvgPointerMove}
       >
         <defs>
           {/* Pulse animation for selected block glow */}

@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import useSpecState from "./state/useSpecState";
 import InteractiveRender from "./editor/InteractiveRender";
 import GridEditor from "./editor/GridEditor";
+import CabinetEditBar from "./editor/CabinetEditBar";
 import { defaultCabinet, generateId } from "./state/specHelpers";
 
 // ═══════════════════════════════════════════════════════════
@@ -129,7 +130,11 @@ function Render({ spec }) {
   (spec.wall_layout||[]).forEach(item => {
     const id = item.ref||item.id, cab = cabMap[id], w = cab?cab.width:(item.width||30);
     // Only apply alignment if no explicit filler/gap precedes this cabinet
-    if (!prevWasGap && aMap[id] && bMap[aMap[id]]) wx = bMap[aMap[id]].x;
+    // Never move backwards — alignment can only push right, not overlap previous items
+    if (!prevWasGap && aMap[id] && bMap[aMap[id]]) {
+      const alignX = bMap[aMap[id]].x;
+      if (alignX >= wx) wx = alignX;
+    }
     wallItems.push({ id, x:wx, w, cab, item }); wx += w*SC;
     prevWasGap = !item.ref;
   });
@@ -150,61 +155,83 @@ function Render({ spec }) {
       <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`} style={{display:"block",maxWidth:"100%",minWidth:svgW}}>
         <Box3D cx={PAD} cy={CTTOP} w={ctW} h={1.5} depth={25.5} front="none" top="none" side="none" stroke="#888" sw={0.8}/>
 
-        {baseItems.map(bi => {
-          if (!bi.cab) {
-            const isFiller = bi.item?.type === "filler";
-            if (isFiller) {
-              // Filler: just empty space with a thin dashed line
-              const cy = FLOOR-TOE-34.5*SC;
-              return (<g key={`f-${bi.id}-${bi.x}`}>
-                <line x1={bi.x+bi.w*SC/2} y1={cy} x2={bi.x+bi.w*SC/2} y2={FLOOR} stroke="#ccc" strokeWidth={0.5} strokeDasharray="3,3"/>
-                <text x={bi.x+bi.w*SC/2} y={FLOOR+13} textAnchor="middle" fontSize={6} fill="#bbb" fontFamily="monospace">{bi.w}"</text>
-              </g>);
+        {(() => {
+          const baseEls = [];
+          const baseLabelPos = [];
+          baseItems.forEach(bi => {
+            if (!bi.cab) {
+              const isFiller = bi.item?.type === "filler";
+              if (isFiller) {
+                const cy = FLOOR-TOE-34.5*SC;
+                baseEls.push(<g key={`f-${bi.id}-${bi.x}`}>
+                  <line x1={bi.x+bi.w*SC/2} y1={cy} x2={bi.x+bi.w*SC/2} y2={FLOOR} stroke="#ccc" strokeWidth={0.5} strokeDasharray="3,3"/>
+                  <text x={bi.x+bi.w*SC/2} y={FLOOR+13} textAnchor="middle" fontSize={6} fill="#bbb" fontFamily="monospace">{bi.w}"</text>
+                </g>);
+              } else {
+                const isFridge = bi.id==="fridge"||bi.item?.label?.toLowerCase()?.includes("fridge");
+                const h = isFridge?70:34.5, cy = isFridge?(FLOOR-h*SC):(FLOOR-TOE-34.5*SC);
+                baseEls.push(<g key={`a-${bi.id}`}>
+                  <Box3D cx={bi.x} cy={cy} w={bi.w} h={h} depth={isFridge?28:24} front="#f8f8f8" top="#eee" side="#e0e0e0" stroke="#aaa" sw={0.7} dash="5,3"/>
+                  <text x={bi.x+bi.w*SC/2} y={cy+(h*SC)/2+3} textAnchor="middle" fontSize={8} fill="#aaa" fontFamily="monospace">{(bi.item?.label||bi.id).toUpperCase()}</text>
+                  <text x={bi.x+bi.w*SC/2} y={FLOOR+13} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{bi.w}"</text>
+                </g>);
+              }
+              return;
             }
-            const isFridge = bi.id==="fridge"||bi.item?.label?.toLowerCase()?.includes("fridge");
-            const h = isFridge?70:34.5, cy = isFridge?(FLOOR-h*SC):(FLOOR-TOE-34.5*SC);
-            return (<g key={`a-${bi.id}`}>
-              <Box3D cx={bi.x} cy={cy} w={bi.w} h={h} depth={isFridge?28:24} front="#f8f8f8" top="#eee" side="#e0e0e0" stroke="#aaa" sw={0.7} dash="5,3"/>
-              <text x={bi.x+bi.w*SC/2} y={cy+(h*SC)/2+3} textAnchor="middle" fontSize={8} fill="#aaa" fontFamily="monospace">{(bi.item?.label||bi.id).toUpperCase()}</text>
-              <text x={bi.x+bi.w*SC/2} y={FLOOR+13} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{bi.w}"</text>
+            const c = bi.cab, ch = c.height||34.5, d = c.depth||24, cy = FLOOR-TOE-ch*SC;
+            const labelX = bi.x + c.width*SC/2;
+            const tooClose = baseLabelPos.some(px => Math.abs(labelX - px) < 45);
+            const labelYOff = tooClose ? 33 : 23;
+            baseLabelPos.push(labelX);
+            baseEls.push(<g key={`b-${bi.id}`}>
+              <Box3D cx={bi.x} cy={cy} w={c.width} h={ch} depth={d}/>
+              <rect x={bi.x+2*SC} y={FLOOR-TOE} width={Math.max(0,c.width*SC-4*SC)} height={TOE} fill="none" stroke="#ccc" strokeWidth={0.4}/>
+              <Face cab={c} cx={bi.x} cy={cy} w={c.width} h={ch}/>
+              <text x={labelX} y={FLOOR+13} textAnchor="middle" fontSize={9} fill="#D94420" fontWeight={700} fontFamily="monospace">{bi.id}</text>
+              <text x={labelX} y={FLOOR+labelYOff} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width}w {ch}h {d}d</text>
             </g>);
-          }
-          const c = bi.cab, ch = c.height||34.5, d = c.depth||24, cy = FLOOR-TOE-ch*SC;
-          return (<g key={`b-${bi.id}`}>
-            <Box3D cx={bi.x} cy={cy} w={c.width} h={ch} depth={d}/>
-            <rect x={bi.x+2*SC} y={FLOOR-TOE} width={Math.max(0,c.width*SC-4*SC)} height={TOE} fill="none" stroke="#ccc" strokeWidth={0.4}/>
-            <Face cab={c} cx={bi.x} cy={cy} w={c.width} h={ch}/>
-            <text x={bi.x+c.width*SC/2} y={FLOOR+13} textAnchor="middle" fontSize={9} fill="#D94420" fontWeight={700} fontFamily="monospace">{bi.id}</text>
-            <text x={bi.x+c.width*SC/2} y={FLOOR+23} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width}w {ch}h {d}d</text>
-          </g>);
-        })}
+          });
+          return baseEls;
+        })()}
 
         <Box3D cx={PAD} cy={CTTOP} w={ctW} h={1.5} depth={25.5} front="none" top="none" side="none" stroke="#444" sw={1.3}/>
 
-        {wallItems.map(wi => {
-          if (!wi.cab) {
-            const isFiller = wi.item?.type === "filler";
-            if (isFiller) {
-              // Filler: just empty space with a thin dashed line
-              return (<g key={`wf-${wi.id}-${wi.x}`}>
-                <line x1={wi.x+wi.w*SC/2} y1={WTOP} x2={wi.x+wi.w*SC/2} y2={WBOT} stroke="#ccc" strokeWidth={0.5} strokeDasharray="3,3"/>
-                <text x={wi.x+wi.w*SC/2} y={WTOP-5} textAnchor="middle" fontSize={6} fill="#bbb" fontFamily="monospace">{wi.w}"</text>
-              </g>);
+        {(() => {
+          // Render wall items with collision-free labels
+          const wallEls = [];
+          const labelPositions = []; // track label x positions for staggering
+          wallItems.forEach((wi, idx) => {
+            if (!wi.cab) {
+              const isFiller = wi.item?.type === "filler";
+              if (isFiller) {
+                wallEls.push(<g key={`wf-${wi.id}-${wi.x}`}>
+                  <line x1={wi.x+wi.w*SC/2} y1={WTOP} x2={wi.x+wi.w*SC/2} y2={WBOT} stroke="#ccc" strokeWidth={0.5} strokeDasharray="3,3"/>
+                  <text x={wi.x+wi.w*SC/2} y={WTOP-5} textAnchor="middle" fontSize={6} fill="#bbb" fontFamily="monospace">{wi.w}"</text>
+                </g>);
+              } else {
+                const hh=16, hy=WBOT+8;
+                wallEls.push(<g key={`h-${wi.id}`}>
+                  <rect x={wi.x+6} y={hy} width={Math.max(wi.w*SC-12,1)} height={hh} fill="#f4f4f4" stroke="#aaa" strokeWidth={0.7} rx={3}/>
+                  <text x={wi.x+wi.w*SC/2} y={hy+11} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">HOOD</text>
+                </g>);
+              }
+              return;
             }
-            const hh=16, hy=WBOT+8;
-            return (<g key={`h-${wi.id}`}>
-              <rect x={wi.x+6} y={hy} width={Math.max(wi.w*SC-12,1)} height={hh} fill="#f4f4f4" stroke="#aaa" strokeWidth={0.7} rx={3}/>
-              <text x={wi.x+wi.w*SC/2} y={hy+11} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">HOOD</text>
+            const c = wi.cab, ch = c.height||30, d = c.depth||12;
+            const labelX = wi.x + c.width*SC/2;
+            // Check if this label overlaps with a previous one (within 40px)
+            const tooClose = labelPositions.some(px => Math.abs(labelX - px) < 40);
+            const labelYOff = tooClose ? -25 : -15;
+            labelPositions.push(labelX);
+            wallEls.push(<g key={`w-${wi.id}`}>
+              <Box3D cx={wi.x} cy={WTOP} w={c.width} h={ch} depth={d} front="#fff" top="#eee" side="#ddd"/>
+              <Face cab={c} cx={wi.x} cy={WTOP} w={c.width} h={ch}/>
+              <text x={labelX} y={WTOP-5} textAnchor="middle" fontSize={9} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{wi.id}</text>
+              <text x={labelX} y={WTOP+labelYOff} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width}x{ch}x{d}</text>
             </g>);
-          }
-          const c = wi.cab, ch = c.height||30, d = c.depth||12;
-          return (<g key={`w-${wi.id}`}>
-            <Box3D cx={wi.x} cy={WTOP} w={c.width} h={ch} depth={d} front="#fff" top="#eee" side="#ddd"/>
-            <Face cab={c} cx={wi.x} cy={WTOP} w={c.width} h={ch}/>
-            <text x={wi.x+c.width*SC/2} y={WTOP-5} textAnchor="middle" fontSize={9} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{wi.id}</text>
-            <text x={wi.x+c.width*SC/2} y={WTOP-15} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width}x{ch}x{d}</text>
-          </g>);
-        })}
+          });
+          return wallEls;
+        })()}
 
         {wallItems.length > 0 && (() => {
           const mn = Math.min(...wallItems.map(p=>p.x)), mx = Math.max(...wallItems.map(p=>p.x+p.w*SC)), dd = dp(12);
@@ -462,63 +489,31 @@ export default function App() {
 
               {/* Bottom bar — cabinet selected */}
               {sel && !selectedGapItem && (
-                <div style={{flexShrink:0,background:"#0c0c14",borderTop:"1px solid #1a1a2a",padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{color:selColor,fontWeight:700,fontSize:16,fontFamily:"'JetBrains Mono',monospace"}}>{sel.id}</span>
-                  <span style={{color:"#555",fontSize:10,fontFamily:"'JetBrains Mono',monospace"}}>{sel.type.replace(/_/g," ")}</span>
-                  <input
-                    ref={widthInputRef}
-                    key={sel.id}
-                    type="number"
-                    defaultValue={sel.width}
-                    onFocus={e=>e.target.select()}
-                    onKeyDown={e=>{if(e.key==="Enter"){const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0){dispatch({type:"SET_DIMENSION",id:sel.id,field:"width",value:v});
-                      // Advance to next cabinet
-                      const allRefs=[...(spec.base_layout||[]),...(spec.wall_layout||[])].filter(i=>i.ref);
-                      const idx=allRefs.findIndex(i=>i.ref===sel.id);
-                      if(idx!==-1&&idx<allRefs.length-1){setSelectedId(allRefs[idx+1].ref);setTimeout(()=>{if(widthInputRef.current){widthInputRef.current.focus();widthInputRef.current.select();}},50);}else{e.target.blur();}
-                    }}}}
-                    onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0&&v!==sel.width)dispatch({type:"SET_DIMENSION",id:sel.id,field:"width",value:v});}}
-                    style={{width:64,height:36,background:"#14141e",border:`2px solid ${selColor}`,borderRadius:6,color:"#fff",fontSize:16,textAlign:"center",fontFamily:"'JetBrains Mono',monospace",fontWeight:700}}
-                  />
-                  <span style={{color:"#555",fontSize:14,fontFamily:"'JetBrains Mono',monospace"}}>w</span>
-                  <input
-                    key={sel.id+"h"}
-                    type="number"
-                    defaultValue={sel.height}
-                    onFocus={e=>e.target.select()}
-                    onKeyDown={e=>{if(e.key==="Enter"){const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0){dispatch({type:"SET_DIMENSION",id:sel.id,field:"height",value:v});e.target.blur();}}}}
-                    onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0&&v!==sel.height)dispatch({type:"SET_DIMENSION",id:sel.id,field:"height",value:v});}}
-                    style={{width:52,height:36,background:"#14141e",border:"1px solid #2a2a3a",borderRadius:6,color:"#aaa",fontSize:14,textAlign:"center",fontFamily:"'JetBrains Mono',monospace"}}
-                  />
-                  <span style={{color:"#555",fontSize:14,fontFamily:"'JetBrains Mono',monospace"}}>h</span>
-                  <input
-                    key={sel.id+"d"}
-                    type="number"
-                    defaultValue={sel.depth}
-                    onFocus={e=>e.target.select()}
-                    onKeyDown={e=>{if(e.key==="Enter"){const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0){dispatch({type:"SET_DIMENSION",id:sel.id,field:"depth",value:v});e.target.blur();}}}}
-                    onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0&&v!==sel.depth)dispatch({type:"SET_DIMENSION",id:sel.id,field:"depth",value:v});}}
-                    style={{width:52,height:36,background:"#14141e",border:"1px solid #2a2a3a",borderRadius:6,color:"#aaa",fontSize:14,textAlign:"center",fontFamily:"'JetBrains Mono',monospace"}}
-                  />
-                  <span style={{color:"#555",fontSize:14,fontFamily:"'JetBrains Mono',monospace"}}>d</span>
-                  <span style={{flex:1}}/>
-                  {/* #10: Keyboard shortcut hints */}
-                  <span style={{color:"#333",fontSize:9,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.4}}>
-                    ← → move &nbsp; Tab next &nbsp; Esc deselect &nbsp; Cmd+D dup
-                  </span>
-                  <button onClick={()=>{
+                <CabinetEditBar
+                  cab={sel}
+                  spec={spec}
+                  dispatch={dispatch}
+                  selColor={selColor}
+                  widthInputRef={widthInputRef}
+                  onSelectNext={() => {
+                    const allRefs=[...(spec.base_layout||[]),...(spec.wall_layout||[])].filter(i=>i.ref);
+                    const idx=allRefs.findIndex(i=>i.ref===sel.id);
+                    if(idx!==-1&&idx<allRefs.length-1){setSelectedId(allRefs[idx+1].ref);setTimeout(()=>{if(widthInputRef.current){widthInputRef.current.focus();widthInputRef.current.select();}},50);}
+                  }}
+                  onSelectId={setSelectedId}
+                  onDelete={() => { dispatch({type:"DELETE_CABINET",id:sel.id}); setSelectedId(null); }}
+                  onAddGap={() => {
                     const layout=spec[sel.row==="base"?"base_layout":"wall_layout"]||[];
                     const pos=layout.findIndex(i=>i.ref===sel.id);
                     dispatch({type:"ADD_GAP",row:sel.row,position:Math.max(pos,0),gap:{type:"filler",label:"Filler",width:3}});
-                  }} style={{height:36,padding:"0 10px",borderRadius:6,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#888",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Filler</button>
-                  <button onClick={()=>{
+                  }}
+                  onAddCab={() => {
                     const id=generateId(sel.row,spec),cab=defaultCabinet(sel.row);cab.id=id;
                     const layout=spec[sel.row==="base"?"base_layout":"wall_layout"]||[];
                     const pos=layout.findIndex(i=>i.ref===sel.id);
                     dispatch({type:"ADD_CABINET",row:sel.row,position:pos+1,cabinet:cab});setSelectedId(id);
-                  }} style={{height:36,padding:"0 10px",borderRadius:6,background:"#1a1a2a",border:"1px solid #2a2a3a",color:selColor,fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>+ Cab</button>
-                  <button onClick={()=>{dispatch({type:"DELETE_CABINET",id:sel.id});setSelectedId(null);}} style={{height:36,padding:"0 10px",borderRadius:6,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#e04040",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Del</button>
-                </div>
+                  }}
+                />
               )}
 
               {/* Bottom bar — nothing selected */}
