@@ -30,7 +30,7 @@ function sectionSummary(sec) {
   return s;
 }
 
-export default function CabinetEditBar({ cab, spec, dispatch, selColor, widthInputRef, onSelectNext, onSelectId, onDelete, onAddGap, onAddCab }) {
+export default function CabinetEditBar({ cab, spec, dispatch, selColor, widthInputRef, onSelectNext, onSelectId, onDelete, onAddGap, onAddCab, onMoveLeft, onMoveRight }) {
   const [editingSec, setEditingSec] = useState(null); // index of section being edited
   const sections = cab?.face?.sections || [];
 
@@ -107,6 +107,8 @@ export default function CabinetEditBar({ cab, spec, dispatch, selColor, widthInp
 
         <span style={{ flex: 1 }} />
 
+        {onMoveLeft && <button onClick={onMoveLeft} title="Move left (Arrow Left)" style={{ height: 32, width: 32, padding: 0, borderRadius: 6, background: "#1a1a2a", border: "1px solid #2a2a3a", color: selColor, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: MONO, display: "flex", alignItems: "center", justifyContent: "center" }}>{"\u2190"}</button>}
+        {onMoveRight && <button onClick={onMoveRight} title="Move right (Arrow Right)" style={{ height: 32, width: 32, padding: 0, borderRadius: 6, background: "#1a1a2a", border: "1px solid #2a2a3a", color: selColor, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: MONO, display: "flex", alignItems: "center", justifyContent: "center" }}>{"\u2192"}</button>}
         <button onClick={onAddGap} style={{ height: 32, padding: "0 8px", borderRadius: 6, background: "#1a1a2a", border: "1px solid #2a2a3a", color: "#888", fontWeight: 600, fontSize: 11, cursor: "pointer", fontFamily: SANS }}>Filler</button>
         <button onClick={onAddCab} style={{ height: 32, padding: "0 8px", borderRadius: 6, background: "#1a1a2a", border: "1px solid #2a2a3a", color: selColor, fontWeight: 600, fontSize: 11, cursor: "pointer", fontFamily: SANS }}>+ Cab</button>
         <button onClick={onDelete} style={{ height: 32, padding: "0 8px", borderRadius: 6, background: "#1a1a2a", border: "1px solid #2a2a3a", color: "#e04040", fontWeight: 600, fontSize: 11, cursor: "pointer", fontFamily: SANS }}>Del</button>

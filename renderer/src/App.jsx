@@ -470,6 +470,8 @@ export default function App() {
                     if(idx!==-1&&idx<allRefs.length-1){setSelectedId(allRefs[idx+1].ref);setTimeout(()=>{if(widthInputRef.current){widthInputRef.current.focus();widthInputRef.current.select();}},50);}
                   }}
                   onSelectId={setSelectedId}
+                  onMoveLeft={() => dispatch({ type: "NUDGE_CABINET", id: sel.id, amount: -3 })}
+                  onMoveRight={() => dispatch({ type: "NUDGE_CABINET", id: sel.id, amount: 3 })}
                   onDelete={() => { dispatch({type:"DELETE_CABINET",id:sel.id}); setSelectedId(null); }}
                   onAddGap={() => {
                     const layout=spec[sel.row==="base"?"base_layout":"wall_layout"]||[];
