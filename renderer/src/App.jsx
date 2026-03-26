@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import useSpecState from "./state/useSpecState";
 import InteractiveRender from "./editor/InteractiveRender";
 import GridEditor from "./editor/GridEditor";
@@ -263,6 +263,34 @@ export default function App() {
 
   // Ref to the width input in the bottom bar — passed to GridEditor for double-click focus
   const widthInputRef = useRef(null);
+
+  // Global keyboard handler for Render tab — arrow keys to nudge/reorder cabinets
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (tab !== "render") return;
+      if (document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "SELECT" || document.activeElement?.tagName === "TEXTAREA") return;
+      if ((e.metaKey||e.ctrlKey) && e.key === "z") { e.preventDefault(); if(e.shiftKey) redo(); else undo(); return; }
+      if (!selectedId) return;
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (e.metaKey || e.ctrlKey) dispatch({ type: "MOVE_CABINET", id: selectedId, direction: "left" });
+        else dispatch({ type: "NUDGE_CABINET", id: selectedId, amount: e.shiftKey ? -0.5 : -1 });
+        return;
+      }
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        if (e.metaKey || e.ctrlKey) dispatch({ type: "MOVE_CABINET", id: selectedId, direction: "right" });
+        else dispatch({ type: "NUDGE_CABINET", id: selectedId, amount: e.shiftKey ? 0.5 : 1 });
+        return;
+      }
+      if (e.key === "Escape") { setSelectedId(null); setSelectedGapItem(null); return; }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        dispatch({ type: "DELETE_CABINET", id: selectedId }); setSelectedId(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [tab, selectedId, dispatch, undo, redo]);
 
   const loadWireframe = () => { dispatch({ type: "LOAD_SPEC", spec: JSON.parse(JSON.stringify(WIREFRAME_SPEC)) }); setMode("loaded"); setTab("render"); };
 
