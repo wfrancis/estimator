@@ -348,12 +348,12 @@ export default function App() {
         <h1 style={{fontSize:16,fontWeight:700,margin:0,letterSpacing:"-0.02em",color:"#eee"}}>Cabinet Spec Tool</h1>
         {hasSpec && (
           <div style={{display:"flex",gap:3}}>
-            {["render","edit","json"].map(t=>(
+            {["render","plan","json"].map(t=>(
               <button key={t} onClick={()=>setTab(t)} style={{
                 background:tab===t?"#1a1a2a":"transparent",color:tab===t?"#fff":"#555",
                 border:`1px solid ${tab===t?"#2a2a3a":"transparent"}`,
                 padding:"4px 10px",borderRadius:5,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"
-              }}>{t==="render"?"Render":t==="edit"?"Edit":"JSON"}</button>
+              }}>{t==="render"?"Render":t==="plan"?"Plan":"JSON"}</button>
             ))}
           </div>
         )}
@@ -404,23 +404,80 @@ export default function App() {
           </div>
         )}
 
-        {hasSpec && tab === "render" && (
-          <div>
-            <Render spec={spec}/>
-            <div style={{marginTop:10,padding:"10px 12px",background:"#0c0c14",borderRadius:8,border:"1px solid #1a1a2a",
-              fontSize:11,color:"#555",lineHeight:1.6,fontFamily:"'JetBrains Mono',monospace"}}>
-              <strong style={{color:"#D94420"}}>BASE: </strong>
-              {(spec.base_layout||[]).map(i=>i.ref||`[${(i.label||i.id||"?").toUpperCase()} ${i.width}"]`).join(" \u2192 ")}
-              <br/>
-              <strong style={{color:"#1a6fbf"}}>WALL: </strong>
-              {(spec.wall_layout||[]).map(i=>i.ref||`[${(i.label||i.id||"?").toUpperCase()} ${i.width}"]`).join(" \u2192 ")}
-            </div>
-            <button onClick={reset} style={{marginTop:10,background:"none",border:"1px solid #2a2a3a",color:"#555",
-              padding:"6px 14px",borderRadius:6,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Start Over</button>
-          </div>
-        )}
+        {hasSpec && tab === "render" && (() => {
+          const cabMap = {};
+          (spec.cabinets || []).forEach(c => { cabMap[c.id] = c; });
+          const sel = selectedId ? cabMap[selectedId] : null;
+          const selColor = sel?.row === "wall" ? "#1a6fbf" : "#D94420";
+          const baseRun = (spec.base_layout||[]).reduce((s,i)=>s+(i.ref?cabMap[i.ref]?.width||0:i.width||0),0);
+          const wallRun = (spec.wall_layout||[]).reduce((s,i)=>s+(i.ref?cabMap[i.ref]?.width||0:i.width||0),0);
 
-        {hasSpec && tab === "edit" && (() => {
+          return (
+            <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 50px)",margin:"-14px -20px 0",padding:0}}>
+              {/* Toolbar */}
+              <div style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px",background:"#06060c",borderBottom:"1px solid #1a1a2a",flexShrink:0,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
+                <button onClick={undo} disabled={!canUndo} style={{background:canUndo?"#1a1a2a":"transparent",border:"1px solid #2a2a3a",color:canUndo?"#e0e0e0":"#333",padding:"4px 10px",borderRadius:4,fontSize:11,cursor:canUndo?"pointer":"default",fontWeight:600}}>Undo</button>
+                <button onClick={redo} disabled={!canRedo} style={{background:canRedo?"#1a1a2a":"transparent",border:"1px solid #2a2a3a",color:canRedo?"#e0e0e0":"#333",padding:"4px 10px",borderRadius:4,fontSize:11,cursor:canRedo?"pointer":"default",fontWeight:600}}>Redo</button>
+                <span style={{flex:1}}/>
+                <span style={{color:"#555",fontWeight:600}}>{cabCount} cabs</span>
+                <span style={{color:"#333"}}>|</span>
+                <span style={{color:"#D94420",fontWeight:600}}>B:{baseRun}"</span>
+                <span style={{color:"#333"}}>|</span>
+                <span style={{color:"#1a6fbf",fontWeight:600}}>W:{wallRun}"</span>
+              </div>
+
+              {/* Interactive 3D Render */}
+              <div style={{flex:"1 1 auto",overflow:"auto",background:"#fff"}}>
+                <InteractiveRender spec={spec} selectedId={selectedId} onSelect={handleSelect}/>
+              </div>
+
+              {/* Bottom bar — cabinet selected */}
+              {sel && !selectedGapItem && (
+                <CabinetEditBar
+                  cab={sel} spec={spec} dispatch={dispatch} selColor={selColor}
+                  widthInputRef={widthInputRef}
+                  onSelectNext={() => {
+                    const allRefs=[...(spec.base_layout||[]),...(spec.wall_layout||[])].filter(i=>i.ref);
+                    const idx=allRefs.findIndex(i=>i.ref===sel.id);
+                    if(idx!==-1&&idx<allRefs.length-1){setSelectedId(allRefs[idx+1].ref);setTimeout(()=>{if(widthInputRef.current){widthInputRef.current.focus();widthInputRef.current.select();}},50);}
+                  }}
+                  onSelectId={setSelectedId}
+                  onDelete={() => { dispatch({type:"DELETE_CABINET",id:sel.id}); setSelectedId(null); }}
+                  onAddGap={() => {
+                    const layout=spec[sel.row==="base"?"base_layout":"wall_layout"]||[];
+                    const pos=layout.findIndex(i=>i.ref===sel.id);
+                    dispatch({type:"ADD_GAP",row:sel.row,position:Math.max(pos,0),gap:{type:"filler",label:"Filler",width:3}});
+                  }}
+                  onAddCab={() => {
+                    const id=generateId(sel.row,spec),cab=defaultCabinet(sel.row);cab.id=id;
+                    const layout=spec[sel.row==="base"?"base_layout":"wall_layout"]||[];
+                    const pos=layout.findIndex(i=>i.ref===sel.id);
+                    dispatch({type:"ADD_CABINET",row:sel.row,position:pos+1,cabinet:cab});setSelectedId(id);
+                  }}
+                />
+              )}
+
+              {/* Bottom bar — nothing selected */}
+              {!sel && !selectedGapItem && (
+                <div style={{flexShrink:0,background:"#0c0c14",borderTop:"1px solid #1a1a2a",padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{color:"#444",fontSize:12,fontFamily:"'DM Sans',sans-serif"}}>Click a cabinet to edit.</span>
+                  <span style={{flex:1}}/>
+                  <button onClick={()=>{
+                    const id=generateId("base",spec),cab=defaultCabinet("base");cab.id=id;
+                    dispatch({type:"ADD_CABINET",row:"base",position:(spec.base_layout||[]).length,cabinet:cab});setSelectedId(id);
+                  }} style={{height:32,padding:"0 10px",borderRadius:6,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#D94420",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>+ Base</button>
+                  <button onClick={()=>{
+                    const id=generateId("wall",spec),cab=defaultCabinet("wall");cab.id=id;
+                    dispatch({type:"ADD_CABINET",row:"wall",position:(spec.wall_layout||[]).length,cabinet:cab});setSelectedId(id);
+                  }} style={{height:32,padding:"0 10px",borderRadius:6,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#1a6fbf",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>+ Wall</button>
+                  <button onClick={reset} style={{height:32,padding:"0 10px",borderRadius:6,background:"transparent",border:"1px solid #2a2a3a",color:"#555",fontWeight:600,fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Start Over</button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {hasSpec && tab === "plan" && (() => {
           const cabMap = {};
           (spec.cabinets || []).forEach(c => { cabMap[c.id] = c; });
           const sel = selectedId ? cabMap[selectedId] : null;
