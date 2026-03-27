@@ -349,7 +349,7 @@ export default function App() {
       extracted.cabinets?.forEach(c => { if(!c.depth) c.depth = c.row==="wall"?12:24; if(!c.height) c.height = c.row==="wall"?30:34.5; if(!c.width) c.width=24; });
       dispatch({ type: "LOAD_SPEC", spec: extracted });
       setMode("loaded"); setTab("render");
-    } catch(err) { setJsonError(String(err.message)); setUploadStatus(""); }
+    } catch(err) { setUploadStatus(`Error: ${err.message}`); }
     finally { setUploading(false); }
   };
   const handleImageUpload = (e) => { handleImageFile(e.target.files[0]); };
@@ -431,11 +431,11 @@ export default function App() {
                 <polygon points="130,28 138,23 138,63 130,68" fill="#e4e4e4" stroke="#444" strokeWidth="0.5"/>
                 <rect x="100" y="28" width="30" height="40" fill="#fff" stroke="#444" strokeWidth="0.8" rx="1"/>
               </svg>
-              <div style={{fontSize:22,fontWeight:600,color:"#eee",letterSpacing:"-0.02em",marginBottom:8}}>
-                Upload a wireframe. Get every cabinet spec.
+              <div style={{fontSize:20,fontWeight:600,color:"#eee",letterSpacing:"-0.02em",marginBottom:8}}>
+                Cabinet Spec Tool
               </div>
               <div style={{fontSize:13,color:"#555"}}>
-                Works for any room — not just the one you're thinking of.
+                Extract cabinet specs from a wireframe image, or load an existing spec.
               </div>
             </div>
 
@@ -457,6 +457,15 @@ export default function App() {
                 {uploading ? (
                   <>
                     <div style={{fontSize:13,fontWeight:600,color:"#D94420",animation:"pulse 1.5s infinite"}}>{uploadStatus}</div>
+                  </>
+                ) : uploadStatus?.startsWith("Error") ? (
+                  <>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" style={{marginBottom:8}}>
+                      <circle cx="12" cy="12" r="10" stroke="#e04040" strokeWidth="2"/>
+                      <path d="M15 9l-6 6m0-6l6 6" stroke="#e04040" strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
+                    <div style={{fontSize:12,color:"#e04040",fontWeight:600,maxWidth:280}}>{uploadStatus}</div>
+                    <div style={{fontSize:11,color:"#555",marginTop:8}}>Click to try again</div>
                   </>
                 ) : wireframePreview && uploadStatus ? (
                   <>
