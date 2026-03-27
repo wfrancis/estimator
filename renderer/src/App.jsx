@@ -538,7 +538,19 @@ export default function App() {
               {/* Bottom bar — gap selected */}
               {!sel && selectedGapItem && (
                 <div style={{flexShrink:0,background:"#0c0c14",borderTop:"1px solid #1a1a2a",padding:"8px 10px",display:"flex",alignItems:"center",gap:8,fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>
-                  <span style={{color:"#888",fontWeight:700}}>{(selectedGapItem.label||selectedGapItem.id||"GAP").toUpperCase()}</span>
+                  <span style={{color:"#555"}}>name</span>
+                  <input type="text"
+                    defaultValue={selectedGapItem.label||""}
+                    placeholder="Opening"
+                    onBlur={e=>{const v=e.target.value.trim();
+                      const row=spec.base_layout?.includes(selectedGapItem)?"base":"wall";
+                      const layout=spec[row==="base"?"base_layout":"wall_layout"]||[];
+                      const idx=layout.indexOf(selectedGapItem);
+                      if(idx!==-1)dispatch({type:"UPDATE_GAP",row,index:idx,label:v});
+                    }}
+                    onKeyDown={e=>{if(e.key==="Enter")e.target.blur();}}
+                    style={{width:90,height:28,background:"#0a0a14",border:"1px solid #2a2a3a",borderRadius:4,color:"#fff",textAlign:"center",fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}
+                  />
                   <span style={{color:"#555"}}>width</span>
                   <input type="number" value={selectedGapItem.width||0}
                     onChange={e=>{const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0){
@@ -550,6 +562,13 @@ export default function App() {
                     style={{width:50,height:28,background:"#0a0a14",border:"1px solid #2a2a3a",borderRadius:4,color:"#fff",textAlign:"center",fontSize:13,fontFamily:"'JetBrains Mono',monospace"}}
                   />"
                   <span style={{flex:1}}/>
+                  <button onClick={()=>{
+                    const row=spec.base_layout?.includes(selectedGapItem)?"base":"wall";
+                    const layout=spec[row==="base"?"base_layout":"wall_layout"]||[];
+                    const idx=layout.indexOf(selectedGapItem);
+                    if(idx!==-1)dispatch({type:"DELETE_GAP",row,index:idx});
+                    setSelectedGapItem(null);
+                  }} style={{height:28,padding:"0 10px",borderRadius:4,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#e04040",fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Del</button>
                   <button onClick={()=>setSelectedGapItem(null)} style={{height:28,padding:"0 10px",borderRadius:4,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#888",fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Done</button>
                 </div>
               )}

@@ -164,12 +164,18 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
 
         {baseItems.map(bi => {
           if (!bi.cab) {
-            const isFridge = bi.id === "fridge" || bi.item?.label?.toLowerCase()?.includes("fridge");
-            const h = isFridge ? 70 : 34.5, cy = isFridge ? (FLOOR - h * SC) : (FLOOR - TOE - 34.5 * SC);
+            const gapW = bi.w * SC, midX = bi.x + gapW / 2;
+            const label = (bi.item?.label || "").toUpperCase();
+            const dimY = FLOOR - TOE - 34.5 * SC / 2;
             return (<g key={`a-${bi.id}`} onClick={handleGapClick(bi.item)} style={{ cursor: "pointer" }}>
-              <Box3D cx={bi.x} cy={cy} w={bi.w} h={h} depth={isFridge ? 28 : 24} front="#f8f8f8" top="#eee" side="#e0e0e0" stroke="#aaa" sw={0.7} dash="5,3" />
-              <text x={bi.x + bi.w * SC / 2} y={cy + (h * SC) / 2 + 3} textAnchor="middle" fontSize={8} fill="#aaa" fontFamily="monospace">{(bi.item?.label || bi.id).toUpperCase()}</text>
-              <text x={bi.x + bi.w * SC / 2} y={FLOOR + 13} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{bi.w}"</text>
+              {/* Bracket lines at edges */}
+              <line x1={bi.x + 1} y1={dimY - 6} x2={bi.x + 1} y2={dimY + 6} stroke="#bbb" strokeWidth={0.6} />
+              <line x1={bi.x + gapW - 1} y1={dimY - 6} x2={bi.x + gapW - 1} y2={dimY + 6} stroke="#bbb" strokeWidth={0.6} />
+              <line x1={bi.x + 1} y1={dimY} x2={bi.x + gapW - 1} y2={dimY} stroke="#bbb" strokeWidth={0.5} strokeDasharray="3,2" />
+              {/* Width */}
+              <text x={midX} y={dimY - 4} textAnchor="middle" fontSize={8} fill="#999" fontWeight={600} fontFamily="monospace">{bi.w}"</text>
+              {/* Label if named */}
+              {label && <text x={midX} y={dimY + 11} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{label}</text>}
             </g>);
           }
           const c = bi.cab, ch = c.height || 34.5, d = c.depth || 24, cy = FLOOR - TOE - ch * SC;
@@ -193,12 +199,16 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
           if (!wi.cab) {
             const gapW = wi.w * SC, midX = wi.x + gapW / 2;
             const label = (wi.item?.label || "").toUpperCase();
-            const gapH = maxWH * 0.6, gapY = WTOP + (maxWH - gapH) / 2;
+            const dimY = WTOP + maxWH / 2;
             return (<g key={`h-${wi.id}`} onClick={handleGapClick(wi.item)} style={{ cursor: "pointer" }}>
-              <rect x={wi.x + 3} y={gapY} width={Math.max(gapW - 6, 1)} height={gapH}
-                fill="#f8f8f8" stroke="#aaa" strokeWidth={0.7} strokeDasharray="5,3" rx={3} />
-              {label && <text x={midX} y={gapY + gapH / 2 + 1} textAnchor="middle" fontSize={8} fill="#aaa" fontFamily="monospace">{label}</text>}
-              <text x={midX} y={gapY + gapH / 2 + (label ? 12 : 3)} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{wi.w}"</text>
+              {/* Thin bracket lines at edges */}
+              <line x1={wi.x + 1} y1={dimY - 6} x2={wi.x + 1} y2={dimY + 6} stroke="#bbb" strokeWidth={0.6} />
+              <line x1={wi.x + gapW - 1} y1={dimY - 6} x2={wi.x + gapW - 1} y2={dimY + 6} stroke="#bbb" strokeWidth={0.6} />
+              <line x1={wi.x + 1} y1={dimY} x2={wi.x + gapW - 1} y2={dimY} stroke="#bbb" strokeWidth={0.5} strokeDasharray="3,2" />
+              {/* Width */}
+              <text x={midX} y={dimY - 4} textAnchor="middle" fontSize={8} fill="#999" fontWeight={600} fontFamily="monospace">{wi.w}"</text>
+              {/* Label if named */}
+              {label && <text x={midX} y={dimY + 11} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{label}</text>}
             </g>);
           }
           const c = wi.cab, ch = c.height || 30, d = c.depth || 12;
