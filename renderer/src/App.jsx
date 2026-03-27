@@ -257,6 +257,8 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("");
   const [wireframePreview, setWireframePreview] = useState(null);
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
 
   const [selectedId, setSelectedId] = useState(null);
   const [selectedGapItem, setSelectedGapItem] = useState(null);
@@ -332,23 +334,34 @@ export default function App() {
     } catch(e) { setJsonError(String(e.message)); }
   };
 
-  const handleImageFile = async (file) => {
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0];
     if (!file) return;
-    setUploading(true);
-    setUploadStatus("Uploading wireframe...");
-    setJsonError(null);
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const handleWireframeUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
     setWireframePreview(URL.createObjectURL(file));
+    runExtraction(file, photoFile);
+  };
+
+  const runExtraction = async (wireframe, photo) => {
+    if (!wireframe) return;
+    setUploading(true);
+    setUploadStatus("Uploading...");
+    setJsonError(null);
     try {
-      setUploadStatus("Sending to Claude Sonnet for extraction...");
+      setUploadStatus(photo ? "Analyzing photo + wireframe with GPT-5.4..." : "Analyzing wireframe with GPT-5.4...");
       const formData = new FormData();
-      formData.append("image", file);
-      let resp;
-      try { resp = await fetch("http://localhost:8001/api/extract", { method: "POST", body: formData }); }
-      catch(fetchErr) { throw new Error("Cannot reach extraction server. Run: cd extractor && python server.py"); }
+      formData.append("image", wireframe);
+      if (photo) formData.append("photo", photo);
+      const resp = await fetch("http://localhost:8001/api/extract", { method: "POST", body: formData });
       if (!resp.ok) {
         let detail = "";
         try { const j = await resp.json(); detail = j.detail || JSON.stringify(j); } catch { detail = await resp.text(); }
-        if (detail.includes("ANTHROPIC_API_KEY")) throw new Error("Set ANTHROPIC_API_KEY env var before starting the extraction server.");
         throw new Error(detail || `Server error ${resp.status}`);
       }
       const extracted = await resp.json();
@@ -359,19 +372,10 @@ export default function App() {
     } catch(err) { setUploadStatus(`Error: ${err.message}`); }
     finally { setUploading(false); }
   };
-  const handleImageUpload = (e) => { handleImageFile(e.target.files[0]); };
-  const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); };
-  const handleDragEnter = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
-  const handleDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
-  const handleDrop = (e) => {
-    e.preventDefault(); e.stopPropagation(); setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file && file.type.startsWith("image/")) handleImageFile(file);
-  };
 
   const reset = () => {
     dispatch({ type: "LOAD_SPEC", spec: { base_layout: [], wall_layout: [], alignment: [], cabinets: [] } });
-    setMode("home"); setJsonInput(""); setJsonError(null); setWireframePreview(null); setUploadStatus("");
+    setMode("home"); setJsonInput(""); setJsonError(null); setWireframePreview(null); setPhotoFile(null); setPhotoPreview(null); setUploadStatus("");
     setSelectedId(null); setSelectedGapItem(null);
   };
 
@@ -446,84 +450,51 @@ export default function App() {
               </div>
             </div>
 
-            {/* Two-card row */}
-            <div style={{display:"flex",gap:16,flexWrap:"wrap",marginBottom:24}}>
-              {/* Upload Card */}
-              <div
-                onClick={()=>!uploading && fileInputRef.current?.click()}
-                onDragOver={handleDragOver} onDragEnter={handleDragEnter} onDragLeave={handleDragLeave} onDrop={handleDrop}
-                style={{
-                  flex:1,minWidth:260,minHeight:200,background:isDragging?"#0d0a14":"#0c0c14",
-                  border:isDragging?"2px dashed #D94420":"2px dashed #2a2a3a",
-                  borderRadius:12,padding:"32px 20px",textAlign:"center",cursor:"pointer",
-                  display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-                  transition:"border-color 0.15s, background 0.15s"
-                }}
-              >
-                <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} disabled={uploading} style={{display:"none"}} />
-                {uploading ? (
-                  <>
-                    <div style={{fontSize:13,fontWeight:600,color:"#D94420",animation:"pulse 1.5s infinite"}}>{uploadStatus}</div>
-                  </>
-                ) : uploadStatus?.startsWith("Error") ? (
-                  <>
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" style={{marginBottom:8}}>
-                      <circle cx="12" cy="12" r="10" stroke="#e04040" strokeWidth="2"/>
-                      <path d="M15 9l-6 6m0-6l6 6" stroke="#e04040" strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
-                    <div style={{fontSize:12,color:"#e04040",fontWeight:600,maxWidth:280}}>{uploadStatus}</div>
-                    <div style={{fontSize:11,color:"#555",marginTop:8}}>Click to try again</div>
-                  </>
-                ) : wireframePreview && uploadStatus ? (
-                  <>
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" style={{marginBottom:8}}>
-                      <circle cx="12" cy="12" r="10" stroke="#22c55e" strokeWidth="2"/>
-                      <path d="M8 12l3 3 5-5" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                    <div style={{fontSize:12,color:"#22c55e",fontWeight:600}}>{uploadStatus}</div>
-                  </>
+            {/* Two upload areas */}
+            <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+              {/* Original Photo (optional) */}
+              <div style={{flex:1,minWidth:200,background:"#0c0c14",border:photoPreview?"2px solid #22c55e":"2px dashed #2a2a3a",borderRadius:12,padding:16,textAlign:"center"}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#aaa",marginBottom:6}}>Original Photo</div>
+                <div style={{fontSize:10,color:"#555",marginBottom:10}}>Optional — helps with accuracy</div>
+                {photoPreview ? (
+                  <div>
+                    <img src={photoPreview} style={{maxWidth:"100%",maxHeight:120,borderRadius:6,border:"1px solid #2a2a3a"}} />
+                    <div style={{marginTop:6,fontSize:10,color:"#22c55e",fontWeight:600}}>✓ Photo loaded</div>
+                  </div>
                 ) : (
-                  <>
-                    {/* Upload icon */}
-                    <svg width="36" height="36" viewBox="0 0 24 24" fill="none" style={{marginBottom:12}}>
-                      <path d="M12 16V4m0 0l-4 4m4-4l4 4" stroke={isDragging?"#D94420":"#555"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      <path d="M20 16v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2" stroke={isDragging?"#D94420":"#555"} strokeWidth="2" strokeLinecap="round"/>
-                    </svg>
-                    <div style={{fontSize:14,fontWeight:600,color:isDragging?"#D94420":"#ccc"}}>Drop wireframe here</div>
-                    <div style={{fontSize:12,color:"#555",marginTop:4}}>or click to browse</div>
-                    <div style={{fontSize:11,color:"#444",marginTop:10,fontFamily:"'JetBrains Mono',monospace"}}>PNG, JPG, WebP</div>
-                  </>
+                  <input type="file" accept="image/*" onChange={handlePhotoUpload} disabled={uploading} style={{display:"block",margin:"0 auto",fontSize:11}} />
                 )}
               </div>
 
-              {/* Example Card */}
-              <div
-                onClick={loadWireframe}
-                onMouseEnter={()=>setExampleHover(true)} onMouseLeave={()=>setExampleHover(false)}
-                style={{
-                  flex:1,minWidth:260,minHeight:200,background:"#0c0c14",
-                  border:exampleHover?"1px solid #D94420":"1px solid #2a2a3a",
-                  borderRadius:12,padding:"24px 20px",textAlign:"center",cursor:"pointer",
-                  display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-                  transition:"border-color 0.15s"
-                }}
-              >
-                {/* Mini cabinet preview */}
-                <svg width="180" height="60" viewBox="0 0 180 60" style={{opacity:0.5,marginBottom:12}}>
-                  <rect x="5" y="10" width="20" height="45" fill="#fff" stroke="#555" strokeWidth="0.6" rx="1"/>
-                  <rect x="27" y="10" width="20" height="45" fill="#fff" stroke="#555" strokeWidth="0.6" rx="1"/>
-                  <rect x="49" y="15" width="30" height="40" fill="#fff" stroke="#555" strokeWidth="0.6" rx="1"/>
-                  <rect x="86" y="15" width="30" height="40" fill="#fff" stroke="#555" strokeWidth="0.6" rx="1"/>
-                  <rect x="118" y="15" width="18" height="40" fill="#fff" stroke="#555" strokeWidth="0.6" rx="1"/>
-                  <rect x="138" y="22" width="16" height="33" fill="#fff" stroke="#555" strokeWidth="0.6" rx="1"/>
-                  <rect x="156" y="22" width="16" height="33" fill="#fff" stroke="#555" strokeWidth="0.6" rx="1"/>
-                  <rect x="81" y="10" width="2" height="50" fill="none" stroke="#888" strokeWidth="0.3" strokeDasharray="2,2"/>
-                </svg>
-                <div style={{fontSize:14,fontWeight:600,color:"#ccc"}}>Try the Example</div>
-                <div style={{fontSize:11,color:"#888",marginTop:6,background:"#1a1a2a",padding:"3px 12px",borderRadius:20,fontFamily:"'JetBrains Mono',monospace"}}>
-                  12 cabinets · 2 rows · range opening
-                </div>
+              {/* Wireframe (required) */}
+              <div style={{flex:1,minWidth:200,background:"#0c0c14",border:wireframePreview&&!uploading?"2px solid #22c55e":"2px dashed #2a2a3a",borderRadius:12,padding:16,textAlign:"center"}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#eee",marginBottom:6}}>Wireframe</div>
+                <div style={{fontSize:10,color:"#555",marginBottom:10}}>Required — the AI extracts cabinets from this</div>
+                {wireframePreview && !uploading ? (
+                  <div>
+                    <img src={wireframePreview} style={{maxWidth:"100%",maxHeight:120,borderRadius:6,border:"1px solid #2a2a3a"}} />
+                    <div style={{marginTop:6,fontSize:10,color:"#22c55e",fontWeight:600}}>✓ Wireframe loaded</div>
+                  </div>
+                ) : (
+                  <input type="file" accept="image/*" onChange={handleWireframeUpload} disabled={uploading} style={{display:"block",margin:"0 auto",fontSize:11}} />
+                )}
               </div>
+            </div>
+
+            {/* Status */}
+            {uploading && <div style={{textAlign:"center",marginBottom:12,color:"#D94420",fontSize:12,fontWeight:600,animation:"pulse 1.5s infinite"}}>{uploadStatus}</div>}
+            {!uploading && uploadStatus && !uploadStatus.startsWith("Error") && <div style={{textAlign:"center",marginBottom:12,color:"#22c55e",fontSize:11}}>{uploadStatus}</div>}
+            {(uploadStatus?.startsWith("Error") || jsonError) && <div style={{textAlign:"center",marginBottom:12,fontSize:11,color:"#e04040"}}>{uploadStatus || jsonError}</div>}
+
+            {/* Example */}
+            <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:20}}>
+              <button onClick={loadWireframe} onMouseEnter={()=>setExampleHover(true)} onMouseLeave={()=>setExampleHover(false)} style={{
+                background:"#0c0c14",color:"#ccc",border:exampleHover?"1px solid #D94420":"1px solid #2a2a3a",
+                padding:"10px 20px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"border-color 0.15s"
+              }}>
+                Try the Example
+              </button>
+              <span style={{fontSize:11,color:"#555",fontFamily:"'JetBrains Mono',monospace"}}>12 cabinets · 2 rows · range opening</span>
             </div>
 
             {/* JSON Accordion */}
