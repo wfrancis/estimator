@@ -259,6 +259,10 @@ export default function App() {
   const [wireframePreview, setWireframePreview] = useState(null);
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [wireframeFile, setWireframeFile] = useState(null);
+  const [dragTarget, setDragTarget] = useState(null); // "photo" | "wireframe" | null
+  const photoInputRef = useRef(null);
+  const wireInputRef = useRef(null);
 
   const [selectedId, setSelectedId] = useState(null);
   const [selectedGapItem, setSelectedGapItem] = useState(null);
@@ -335,18 +339,34 @@ export default function App() {
   };
 
   const handlePhotoUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target?.files?.[0] || e;
+    if (!file || !(file instanceof File)) return;
     setPhotoFile(file);
     setPhotoPreview(URL.createObjectURL(file));
   };
 
   const handleWireframeUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target?.files?.[0] || e;
+    if (!file || !(file instanceof File)) return;
+    setWireframeFile(file);
     setWireframePreview(URL.createObjectURL(file));
-    runExtraction(file, photoFile);
   };
+
+  const handleExtract = () => {
+    if (wireframeFile && photoFile) runExtraction(wireframeFile, photoFile);
+  };
+
+  const handleCardDrop = (which) => (e) => {
+    e.preventDefault(); e.stopPropagation(); setDragTarget(null);
+    const file = e.dataTransfer.files[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    if (which === "photo") handlePhotoUpload(file);
+    else handleWireframeUpload(file);
+  };
+
+  const handleCardDragOver = (e) => { e.preventDefault(); e.stopPropagation(); };
+  const handleCardDragEnter = (which) => (e) => { e.preventDefault(); e.stopPropagation(); setDragTarget(which); };
+  const handleCardDragLeave = (which) => (e) => { e.preventDefault(); e.stopPropagation(); if (dragTarget === which) setDragTarget(null); };
 
   const runExtraction = async (wireframe, photo) => {
     if (!wireframe) return;
@@ -375,7 +395,7 @@ export default function App() {
 
   const reset = () => {
     dispatch({ type: "LOAD_SPEC", spec: { base_layout: [], wall_layout: [], alignment: [], cabinets: [] } });
-    setMode("home"); setJsonInput(""); setJsonError(null); setWireframePreview(null); setPhotoFile(null); setPhotoPreview(null); setUploadStatus("");
+    setMode("home"); setJsonInput(""); setJsonError(null); setWireframePreview(null); setWireframeFile(null); setPhotoFile(null); setPhotoPreview(null); setUploadStatus(""); setDragTarget(null);
     setSelectedId(null); setSelectedGapItem(null);
   };
 
@@ -428,100 +448,164 @@ export default function App() {
         {mode === "home" && (
           <div style={{maxWidth:640,margin:"0 auto"}}>
             {/* Hero */}
-            <div style={{textAlign:"center",paddingTop:48,paddingBottom:32}}>
-              {/* Mini cabinet silhouette */}
-              <svg width="160" height="70" viewBox="0 0 160 70" style={{opacity:0.6,marginBottom:16}}>
-                <polygon points="10,28 18,23 58,23 50,28" fill="#f2f2f2" stroke="#444" strokeWidth="0.5"/>
-                <polygon points="50,28 58,23 58,63 50,68" fill="#e4e4e4" stroke="#444" strokeWidth="0.5"/>
-                <rect x="10" y="28" width="40" height="40" fill="#fff" stroke="#444" strokeWidth="0.8" rx="1"/>
-                <line x1="30" y1="30" x2="30" y2="66" stroke="#ccc" strokeWidth="0.5"/>
-                <polygon points="55,28 63,23 103,23 95,28" fill="#f2f2f2" stroke="#444" strokeWidth="0.5"/>
-                <polygon points="95,28 103,23 103,63 95,68" fill="#e4e4e4" stroke="#444" strokeWidth="0.5"/>
-                <rect x="55" y="28" width="40" height="40" fill="#fff" stroke="#444" strokeWidth="0.8" rx="1"/>
-                <polygon points="100,28 108,23 138,23 130,28" fill="#f2f2f2" stroke="#444" strokeWidth="0.5"/>
-                <polygon points="130,28 138,23 138,63 130,68" fill="#e4e4e4" stroke="#444" strokeWidth="0.5"/>
-                <rect x="100" y="28" width="30" height="40" fill="#fff" stroke="#444" strokeWidth="0.8" rx="1"/>
-              </svg>
-              <div style={{fontSize:20,fontWeight:600,color:"#eee",letterSpacing:"-0.02em",marginBottom:8}}>
-                Cabinet Spec Tool
+            <div style={{textAlign:"center",paddingTop:40,paddingBottom:24}}>
+              <div style={{fontSize:22,fontWeight:700,color:"#eee",letterSpacing:"-0.03em",marginBottom:6}}>New Extraction</div>
+              <div style={{fontSize:13,color:"#555"}}>Upload both images to extract cabinet specs</div>
+            </div>
+
+            {/* Step indicators */}
+            <div style={{display:"flex",justifyContent:"center",gap:0,marginBottom:24,fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,
+                  background:photoPreview?"#22c55e":"#1a1a2a",color:photoPreview?"#000":"#555",border:!photoPreview?"1px solid #2a2a3a":"none"}}>
+                  {photoPreview?"✓":"1"}
+                </span>
+                <span style={{color:photoPreview?"#22c55e":"#888",fontWeight:600}}>Photo</span>
               </div>
-              <div style={{fontSize:13,color:"#555"}}>
-                Extract cabinet specs from a wireframe image, or load an existing spec.
+              <span style={{color:"#333",margin:"0 12px",alignSelf:"center"}}>→</span>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,
+                  background:wireframePreview?"#22c55e":"#1a1a2a",color:wireframePreview?"#000":"#555",border:!wireframePreview?"1px solid #2a2a3a":"none"}}>
+                  {wireframePreview?"✓":"2"}
+                </span>
+                <span style={{color:wireframePreview?"#22c55e":"#888",fontWeight:600}}>Wireframe</span>
+              </div>
+              <span style={{color:"#333",margin:"0 12px",alignSelf:"center"}}>→</span>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,
+                  background:uploading?"#D94420":"#1a1a2a",color:uploading?"#fff":"#555",border:!uploading?"1px solid #2a2a3a":"none"}}>
+                  3
+                </span>
+                <span style={{color:uploading?"#D94420":"#888",fontWeight:600}}>Extract</span>
               </div>
             </div>
 
-            {/* Two upload areas */}
-            <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap"}}>
-              {/* Original Photo (optional) */}
-              <div style={{flex:1,minWidth:200,background:"#0c0c14",border:photoPreview?"2px solid #22c55e":"2px dashed #2a2a3a",borderRadius:12,padding:16,textAlign:"center"}}>
-                <div style={{fontSize:12,fontWeight:700,color:"#aaa",marginBottom:6}}>Original Photo</div>
-                <div style={{fontSize:10,color:"#555",marginBottom:10}}>Optional — helps with accuracy</div>
+            {/* Two upload cards */}
+            <div style={{display:"flex",gap:14,marginBottom:16,flexWrap:"wrap"}}>
+              {/* Photo Card */}
+              <div
+                onClick={()=>!uploading && photoInputRef.current?.click()}
+                onDragOver={handleCardDragOver} onDragEnter={handleCardDragEnter("photo")} onDragLeave={handleCardDragLeave("photo")} onDrop={handleCardDrop("photo")}
+                style={{
+                  flex:1,minWidth:240,minHeight:220,background:"#0c0c14",cursor:"pointer",
+                  border:photoPreview?"2px solid #22c55e":dragTarget==="photo"?"2px dashed #D94420":"2px dashed #2a2a3a",
+                  borderRadius:12,padding:"20px 16px",textAlign:"center",
+                  display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                  transition:"border-color 0.15s"
+                }}
+              >
+                <input ref={photoInputRef} type="file" accept="image/*" onChange={handlePhotoUpload} disabled={uploading} style={{display:"none"}} />
                 {photoPreview ? (
-                  <div>
-                    <img src={photoPreview} style={{maxWidth:"100%",maxHeight:120,borderRadius:6,border:"1px solid #2a2a3a"}} />
-                    <div style={{marginTop:6,fontSize:10,color:"#22c55e",fontWeight:600}}>✓ Photo loaded</div>
-                  </div>
+                  <>
+                    <img src={photoPreview} style={{maxWidth:"100%",maxHeight:140,borderRadius:8,border:"1px solid #2a2a3a",objectFit:"cover",boxShadow:"0 2px 8px rgba(0,0,0,0.3)"}} />
+                    <div style={{marginTop:8,fontSize:11,color:"#22c55e",fontWeight:600}}>✓ Photo ready</div>
+                    <div onClick={(e)=>{e.stopPropagation();setPhotoFile(null);setPhotoPreview(null);}} style={{marginTop:4,fontSize:10,color:"#666",textDecoration:"underline",cursor:"pointer"}}>Change</div>
+                  </>
                 ) : (
-                  <input type="file" accept="image/*" onChange={handlePhotoUpload} disabled={uploading} style={{display:"block",margin:"0 auto",fontSize:11}} />
+                  <>
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" style={{marginBottom:10,opacity:0.5}}>
+                      <rect x="3" y="3" width="18" height="18" rx="3" stroke={dragTarget==="photo"?"#D94420":"#666"} strokeWidth="1.5"/>
+                      <circle cx="8.5" cy="8.5" r="2" stroke={dragTarget==="photo"?"#D94420":"#666"} strokeWidth="1.5"/>
+                      <path d="M3 16l5-5 4 4 3-3 6 6" stroke={dragTarget==="photo"?"#D94420":"#666"} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    <div style={{fontSize:13,fontWeight:600,color:dragTarget==="photo"?"#D94420":"#bbb"}}>Drop photo here</div>
+                    <div style={{fontSize:11,color:"#555",marginTop:4}}>or click to browse</div>
+                    <div style={{fontSize:10,color:"#444",marginTop:10,fontFamily:"'JetBrains Mono',monospace"}}>Original room photo</div>
+                  </>
                 )}
               </div>
 
-              {/* Wireframe (required) */}
-              <div style={{flex:1,minWidth:200,background:"#0c0c14",border:wireframePreview&&!uploading?"2px solid #22c55e":"2px dashed #2a2a3a",borderRadius:12,padding:16,textAlign:"center"}}>
-                <div style={{fontSize:12,fontWeight:700,color:"#eee",marginBottom:6}}>Wireframe</div>
-                <div style={{fontSize:10,color:"#555",marginBottom:10}}>Required — the AI extracts cabinets from this</div>
-                {wireframePreview && !uploading ? (
-                  <div>
-                    <img src={wireframePreview} style={{maxWidth:"100%",maxHeight:120,borderRadius:6,border:"1px solid #2a2a3a"}} />
-                    <div style={{marginTop:6,fontSize:10,color:"#22c55e",fontWeight:600}}>✓ Wireframe loaded</div>
-                  </div>
+              {/* Wireframe Card */}
+              <div
+                onClick={()=>!uploading && wireInputRef.current?.click()}
+                onDragOver={handleCardDragOver} onDragEnter={handleCardDragEnter("wireframe")} onDragLeave={handleCardDragLeave("wireframe")} onDrop={handleCardDrop("wireframe")}
+                style={{
+                  flex:1,minWidth:240,minHeight:220,background:"#0c0c14",cursor:"pointer",
+                  border:wireframePreview?"2px solid #22c55e":dragTarget==="wireframe"?"2px dashed #D94420":"2px dashed #2a2a3a",
+                  borderRadius:12,padding:"20px 16px",textAlign:"center",
+                  display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                  transition:"border-color 0.15s"
+                }}
+              >
+                <input ref={wireInputRef} type="file" accept="image/*" onChange={handleWireframeUpload} disabled={uploading} style={{display:"none"}} />
+                {wireframePreview ? (
+                  <>
+                    <img src={wireframePreview} style={{maxWidth:"100%",maxHeight:140,borderRadius:8,border:"1px solid #2a2a3a",objectFit:"cover",boxShadow:"0 2px 8px rgba(0,0,0,0.3)"}} />
+                    <div style={{marginTop:8,fontSize:11,color:"#22c55e",fontWeight:600}}>✓ Wireframe ready</div>
+                    <div onClick={(e)=>{e.stopPropagation();setWireframeFile(null);setWireframePreview(null);}} style={{marginTop:4,fontSize:10,color:"#666",textDecoration:"underline",cursor:"pointer"}}>Change</div>
+                  </>
                 ) : (
-                  <input type="file" accept="image/*" onChange={handleWireframeUpload} disabled={uploading} style={{display:"block",margin:"0 auto",fontSize:11}} />
+                  <>
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" style={{marginBottom:10,opacity:0.5}}>
+                      <rect x="3" y="3" width="18" height="18" rx="2" stroke={dragTarget==="wireframe"?"#D94420":"#666"} strokeWidth="1.5"/>
+                      <line x1="3" y1="9" x2="21" y2="9" stroke={dragTarget==="wireframe"?"#D94420":"#666"} strokeWidth="1"/>
+                      <line x1="9" y1="9" x2="9" y2="21" stroke={dragTarget==="wireframe"?"#D94420":"#666"} strokeWidth="1"/>
+                      <line x1="15" y1="9" x2="15" y2="21" stroke={dragTarget==="wireframe"?"#D94420":"#666"} strokeWidth="1"/>
+                    </svg>
+                    <div style={{fontSize:13,fontWeight:600,color:dragTarget==="wireframe"?"#D94420":"#bbb"}}>Drop wireframe here</div>
+                    <div style={{fontSize:11,color:"#555",marginTop:4}}>or click to browse</div>
+                    <div style={{fontSize:10,color:"#444",marginTop:10,fontFamily:"'JetBrains Mono',monospace"}}>Cabinet layout drawing</div>
+                  </>
                 )}
               </div>
             </div>
 
-            {/* Status */}
-            {uploading && <div style={{textAlign:"center",marginBottom:12,color:"#D94420",fontSize:12,fontWeight:600,animation:"pulse 1.5s infinite"}}>{uploadStatus}</div>}
-            {!uploading && uploadStatus && !uploadStatus.startsWith("Error") && <div style={{textAlign:"center",marginBottom:12,color:"#22c55e",fontSize:11}}>{uploadStatus}</div>}
-            {(uploadStatus?.startsWith("Error") || jsonError) && <div style={{textAlign:"center",marginBottom:12,fontSize:11,color:"#e04040"}}>{uploadStatus || jsonError}</div>}
+            {/* Extract Button */}
+            {uploading ? (
+              <div style={{textAlign:"center",padding:"14px 0",marginBottom:16}}>
+                <div style={{fontSize:13,fontWeight:600,color:"#D94420",animation:"pulse 1.5s infinite"}}>{uploadStatus}</div>
+              </div>
+            ) : (uploadStatus?.startsWith("Error") || jsonError) ? (
+              <div style={{textAlign:"center",padding:"8px 0",marginBottom:12}}>
+                <div style={{fontSize:12,color:"#e04040",fontWeight:600}}>{uploadStatus || jsonError}</div>
+              </div>
+            ) : (
+              <button onClick={handleExtract} disabled={!photoFile || !wireframeFile || uploading}
+                style={{
+                  width:"100%",padding:"14px 0",borderRadius:10,fontSize:14,fontWeight:700,cursor:photoFile&&wireframeFile?"pointer":"default",
+                  fontFamily:"inherit",border:"none",marginBottom:16,transition:"all 0.15s",letterSpacing:"-0.01em",
+                  background:photoFile&&wireframeFile?"#D94420":"#1a1a2a",
+                  color:photoFile&&wireframeFile?"#fff":"#444",
+                  opacity:photoFile&&wireframeFile?1:0.6
+                }}>
+                {photoFile && wireframeFile ? "Extract Cabinets with GPT-5.4" : "Upload both images to continue"}
+              </button>
+            )}
 
-            {/* Example */}
-            <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:20}}>
+            {/* Divider + secondary options */}
+            <div style={{borderTop:"1px solid #1a1a2a",paddingTop:16,display:"flex",gap:10,alignItems:"center",marginBottom:16}}>
               <button onClick={loadWireframe} onMouseEnter={()=>setExampleHover(true)} onMouseLeave={()=>setExampleHover(false)} style={{
-                background:"#0c0c14",color:"#ccc",border:exampleHover?"1px solid #D94420":"1px solid #2a2a3a",
-                padding:"10px 20px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"border-color 0.15s"
+                background:"transparent",color:"#888",border:exampleHover?"1px solid #D94420":"1px solid #2a2a3a",
+                padding:"8px 16px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"border-color 0.15s"
               }}>
                 Try the Example
               </button>
-              <span style={{fontSize:11,color:"#555",fontFamily:"'JetBrains Mono',monospace"}}>12 cabinets · 2 rows · range opening</span>
+              <span style={{fontSize:10,color:"#444",fontFamily:"'JetBrains Mono',monospace"}}>12 cabs · 2 rows · range opening</span>
+              <span style={{flex:1}}/>
+              <span onClick={()=>setJsonOpen(!jsonOpen)} style={{fontSize:11,color:"#555",cursor:"pointer",textDecoration:"underline"}}>
+                {jsonOpen ? "Hide" : "Import"} JSON
+              </span>
             </div>
 
             {/* JSON Accordion */}
-            <div style={{borderTop:"1px solid #1a1a2a",marginTop:8}}>
-              <div onClick={()=>setJsonOpen(!jsonOpen)} style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",padding:"12px 0",userSelect:"none"}}>
-                <span style={{color:"#444",fontSize:12,transform:jsonOpen?"rotate(90deg)":"rotate(0)",transition:"transform 0.15s",display:"inline-block"}}>&#9654;</span>
-                <span style={{fontSize:12,fontWeight:600,color:"#555"}}>Import JSON Spec</span>
+            {jsonOpen && (
+              <div style={{paddingBottom:16}}>
+                <textarea
+                  value={jsonInput}
+                  onChange={e=>setJsonInput(e.target.value)}
+                  placeholder='{"base_layout":[...],"wall_layout":[...],"alignment":[...],"cabinets":[...]}'
+                  style={{width:"100%",height:100,background:"#0a0a14",border:"1px solid #1a1a2a",borderRadius:8,
+                    color:"#aaa",padding:10,fontSize:11,resize:"vertical",fontFamily:"'JetBrains Mono',monospace"}}
+                />
+                <button onClick={loadJSON} disabled={!jsonInput.trim()} style={{
+                  marginTop:8,background:jsonInput.trim()?"#1a6fbf":"#1a1a2a",color:"#fff",border:"none",
+                  padding:"8px 16px",borderRadius:6,fontSize:12,fontWeight:600,cursor:jsonInput.trim()?"pointer":"default",fontFamily:"inherit"
+                }}>
+                  Load JSON
+                </button>
+                {jsonError && <div style={{marginTop:6,fontSize:11,color:"#e04040"}}>{jsonError}</div>}
               </div>
-              {jsonOpen && (
-                <div style={{paddingBottom:16}}>
-                  <textarea
-                    value={jsonInput}
-                    onChange={e=>setJsonInput(e.target.value)}
-                    placeholder='{"base_layout":[...],"wall_layout":[...],"alignment":[...],"cabinets":[...]}'
-                    style={{width:"100%",height:120,background:"#0a0a14",border:"1px solid #1a1a2a",borderRadius:8,
-                      color:"#aaa",padding:10,fontSize:11,resize:"vertical",fontFamily:"'JetBrains Mono',monospace"}}
-                  />
-                  <button onClick={loadJSON} disabled={!jsonInput.trim()} style={{
-                    marginTop:8,background:jsonInput.trim()?"#1a6fbf":"#1a1a2a",color:"#fff",border:"none",
-                    padding:"8px 16px",borderRadius:6,fontSize:12,fontWeight:600,cursor:jsonInput.trim()?"pointer":"default",fontFamily:"inherit"
-                  }}>
-                    Load JSON
-                  </button>
-                  {jsonError && <div style={{marginTop:6,fontSize:11,color:"#e04040"}}>{jsonError}</div>}
-                </div>
-              )}
-            </div>
+            )}
           </div>
         )}
 
