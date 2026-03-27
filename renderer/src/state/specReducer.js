@@ -76,12 +76,13 @@ export default function specReducer(state, action) {
 
     case "NUDGE_CABINET": {
       // Move a cabinet left/right by inserting/resizing a filler gap before it.
+      // Compensates the spacer AFTER so downstream cabinets stay in place.
       // action: { id, amount } — positive = right, negative = left
       const row = rowForCabinet(spec, action.id);
       if (!row) return spec;
       const layoutKey = getLayoutKey(row);
       const layout = spec[layoutKey];
-      const idx = findRefIndex(layout, action.id);
+      let idx = findRefIndex(layout, action.id);
       if (idx === -1) return spec;
 
       const amount = action.amount || 1;
@@ -97,6 +98,17 @@ export default function specReducer(state, action) {
           prevItem.width = (prevItem.width || 0) + amount;
         } else {
           layout.splice(idx, 0, { type: "filler", id: `spacer_${Date.now()}`, label: "", width: amount });
+          idx++; // cabinet shifted right in array
+        }
+        // Compensate: shrink/remove spacer AFTER this cabinet so downstream stays put
+        const afterIdx = idx + 1;
+        if (afterIdx < layout.length) {
+          const afterItem = layout[afterIdx];
+          const afterIsFiller = afterItem && !afterItem.ref && (afterItem.type === "filler" || afterItem.type === "spacer");
+          if (afterIsFiller) {
+            afterItem.width = (afterItem.width || 0) - amount;
+            if (afterItem.width <= 0) layout.splice(afterIdx, 1);
+          }
         }
       } else {
         // Moving left — shrink or remove filler before
@@ -105,6 +117,18 @@ export default function specReducer(state, action) {
         prevItem.width = (prevItem.width || 0) - shrink;
         if (prevItem.width <= 0) {
           layout.splice(prevIdx, 1);
+          idx--; // cabinet shifted left in array
+        }
+        // Compensate: grow spacer AFTER this cabinet so downstream stays put
+        const afterIdx = idx + 1;
+        if (afterIdx < layout.length) {
+          const afterItem = layout[afterIdx];
+          const afterIsFiller = afterItem && !afterItem.ref && (afterItem.type === "filler" || afterItem.type === "spacer");
+          if (afterIsFiller) {
+            afterItem.width = (afterItem.width || 0) + shrink;
+          } else {
+            layout.splice(afterIdx, 0, { type: "filler", id: `spacer_${Date.now()}`, label: "", width: shrink });
+          }
         }
       }
       return spec;
