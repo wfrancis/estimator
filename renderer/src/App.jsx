@@ -481,7 +481,15 @@ export default function App() {
                 <InteractiveRender spec={spec} selectedId={selectedId} onSelect={(id)=>{handleSelect(id);setRenderCtxMenu(null);}}
                   onDoubleClick={(id)=>{setSelectedId(id);setTimeout(()=>{if(widthInputRef.current){widthInputRef.current.focus();widthInputRef.current.select();}},50);}}
                   onContextMenu={(ctx)=>setRenderCtxMenu(ctx)}
-                  onGapSelect={(item)=>{setSelectedId(null);setSelectedGapItem(item);setRenderCtxMenu(null);}}
+                  onGapSelect={(item)=>{
+                    setSelectedId(null);setRenderCtxMenu(null);
+                    // Enrich with rowName/idx like Plan tab does
+                    const bIdx=(spec.base_layout||[]).indexOf(item);
+                    const wIdx=bIdx===-1?(spec.wall_layout||[]).indexOf(item):-1;
+                    const rowName=bIdx!==-1?"base":"wall";
+                    const idx=bIdx!==-1?bIdx:wIdx;
+                    setSelectedGapItem({...item, entry:item, rowName, idx, w:item.width||0});
+                  }}
                   onNudge={(id,amount)=>dispatch({type:"NUDGE_CABINET",id,amount})}
                 />
                 {/* Context menu */}
@@ -537,38 +545,24 @@ export default function App() {
 
               {/* Bottom bar — gap selected */}
               {!sel && selectedGapItem && (
-                <div style={{flexShrink:0,background:"#0c0c14",borderTop:"1px solid #1a1a2a",padding:"8px 10px",display:"flex",alignItems:"center",gap:8,fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>
+                <div key={`gap-${selectedGapItem.rowName}-${selectedGapItem.idx}`} style={{flexShrink:0,background:"#0c0c14",borderTop:"1px solid #1a1a2a",padding:"8px 10px",display:"flex",alignItems:"center",gap:8,fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>
                   <span style={{color:"#555"}}>name</span>
                   <input type="text"
-                    defaultValue={selectedGapItem.label||""}
+                    defaultValue={selectedGapItem.entry?.label||""}
                     placeholder="Opening"
-                    onBlur={e=>{const v=e.target.value.trim();
-                      const row=spec.base_layout?.includes(selectedGapItem)?"base":"wall";
-                      const layout=spec[row==="base"?"base_layout":"wall_layout"]||[];
-                      const idx=layout.indexOf(selectedGapItem);
-                      if(idx!==-1)dispatch({type:"UPDATE_GAP",row,index:idx,label:v});
-                    }}
+                    onBlur={e=>{const v=e.target.value.trim();dispatch({type:"UPDATE_GAP",row:selectedGapItem.rowName,position:selectedGapItem.idx,updates:{label:v}});}}
                     onKeyDown={e=>{if(e.key==="Enter")e.target.blur();}}
                     style={{width:90,height:28,background:"#0a0a14",border:"1px solid #2a2a3a",borderRadius:4,color:"#fff",textAlign:"center",fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}
                   />
                   <span style={{color:"#555"}}>width</span>
-                  <input type="number" value={selectedGapItem.width||0}
-                    onChange={e=>{const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0){
-                      const row=spec.base_layout?.includes(selectedGapItem)?"base":"wall";
-                      const layout=spec[row==="base"?"base_layout":"wall_layout"]||[];
-                      const idx=layout.indexOf(selectedGapItem);
-                      if(idx!==-1)dispatch({type:"UPDATE_GAP",row,index:idx,width:v});
-                    }}}
+                  <input type="number"
+                    defaultValue={selectedGapItem.w||0}
+                    onKeyDown={e=>{if(e.key==="Enter"){const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0){dispatch({type:"UPDATE_GAP",row:selectedGapItem.rowName,position:selectedGapItem.idx,updates:{width:v}});e.target.blur();}}}}
+                    onBlur={e=>{const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0)dispatch({type:"UPDATE_GAP",row:selectedGapItem.rowName,position:selectedGapItem.idx,updates:{width:v}});}}
                     style={{width:50,height:28,background:"#0a0a14",border:"1px solid #2a2a3a",borderRadius:4,color:"#fff",textAlign:"center",fontSize:13,fontFamily:"'JetBrains Mono',monospace"}}
                   />"
                   <span style={{flex:1}}/>
-                  <button onClick={()=>{
-                    const row=spec.base_layout?.includes(selectedGapItem)?"base":"wall";
-                    const layout=spec[row==="base"?"base_layout":"wall_layout"]||[];
-                    const idx=layout.indexOf(selectedGapItem);
-                    if(idx!==-1)dispatch({type:"DELETE_GAP",row,index:idx});
-                    setSelectedGapItem(null);
-                  }} style={{height:28,padding:"0 10px",borderRadius:4,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#e04040",fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Del</button>
+                  <button onClick={()=>{dispatch({type:"DELETE_GAP",row:selectedGapItem.rowName,position:selectedGapItem.idx});setSelectedGapItem(null);}} style={{height:28,padding:"0 10px",borderRadius:4,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#e04040",fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Del</button>
                   <button onClick={()=>setSelectedGapItem(null)} style={{height:28,padding:"0 10px",borderRadius:4,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#888",fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Done</button>
                 </div>
               )}
