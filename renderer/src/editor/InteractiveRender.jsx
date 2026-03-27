@@ -192,19 +192,13 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
         {wallItems.map(wi => {
           if (!wi.cab) {
             const gapW = wi.w * SC, midX = wi.x + gapW / 2;
-            const isFiller = wi.item?.type === "filler" || wi.item?.type === "spacer";
-            const label = isFiller ? "" : (wi.item?.label || wi.id || "").toUpperCase() || "HOOD";
-            // Dimension line between cabinets
-            const dimY = WTOP + (WBOT - WTOP) / 2;
+            const label = (wi.item?.label || "").toUpperCase();
+            const gapH = maxWH * 0.6, gapY = WTOP + (maxWH - gapH) / 2;
             return (<g key={`h-${wi.id}`} onClick={handleGapClick(wi.item)} style={{ cursor: "pointer" }}>
-              {/* Dashed dimension line */}
-              <line x1={wi.x + 2} y1={dimY} x2={wi.x + gapW - 2} y2={dimY} stroke="#999" strokeWidth={0.8} strokeDasharray="3,2" />
-              <line x1={wi.x + 2} y1={dimY - 5} x2={wi.x + 2} y2={dimY + 5} stroke="#999" strokeWidth={0.8} />
-              <line x1={wi.x + gapW - 2} y1={dimY - 5} x2={wi.x + gapW - 2} y2={dimY + 5} stroke="#999" strokeWidth={0.8} />
-              {/* Width label */}
-              <text x={midX} y={dimY - 5} textAnchor="middle" fontSize={9} fill="#888" fontWeight={600} fontFamily="monospace">{wi.w}"</text>
-              {/* Type label below */}
-              {label && <text x={midX} y={dimY + 12} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{label}</text>}
+              <rect x={wi.x + 3} y={gapY} width={Math.max(gapW - 6, 1)} height={gapH}
+                fill="#f8f8f8" stroke="#aaa" strokeWidth={0.7} strokeDasharray="5,3" rx={3} />
+              {label && <text x={midX} y={gapY + gapH / 2 + 1} textAnchor="middle" fontSize={8} fill="#aaa" fontFamily="monospace">{label}</text>}
+              <text x={midX} y={gapY + gapH / 2 + (label ? 12 : 3)} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{wi.w}"</text>
             </g>);
           }
           const c = wi.cab, ch = c.height || 30, d = c.depth || 12;
