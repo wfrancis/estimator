@@ -342,8 +342,15 @@ export default function App() {
       setUploadStatus("Sending to Claude Sonnet for extraction...");
       const formData = new FormData();
       formData.append("image", file);
-      const resp = await fetch("http://localhost:8001/api/extract", { method: "POST", body: formData });
-      if (!resp.ok) { const err = await resp.text(); throw new Error(`Extraction failed: ${err}`); }
+      let resp;
+      try { resp = await fetch("http://localhost:8001/api/extract", { method: "POST", body: formData }); }
+      catch(fetchErr) { throw new Error("Cannot reach extraction server. Run: cd extractor && python server.py"); }
+      if (!resp.ok) {
+        let detail = "";
+        try { const j = await resp.json(); detail = j.detail || JSON.stringify(j); } catch { detail = await resp.text(); }
+        if (detail.includes("ANTHROPIC_API_KEY")) throw new Error("Set ANTHROPIC_API_KEY env var before starting the extraction server.");
+        throw new Error(detail || `Server error ${resp.status}`);
+      }
       const extracted = await resp.json();
       setUploadStatus(`Extracted ${extracted.cabinets?.length || 0} cabinets`);
       extracted.cabinets?.forEach(c => { if(!c.depth) c.depth = c.row==="wall"?12:24; if(!c.height) c.height = c.row==="wall"?30:34.5; if(!c.width) c.width=24; });
