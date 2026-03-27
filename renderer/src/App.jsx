@@ -482,6 +482,7 @@ export default function App() {
                   onDoubleClick={(id)=>{setSelectedId(id);setTimeout(()=>{if(widthInputRef.current){widthInputRef.current.focus();widthInputRef.current.select();}},50);}}
                   onContextMenu={(ctx)=>setRenderCtxMenu(ctx)}
                   onGapSelect={(item)=>{setSelectedId(null);setSelectedGapItem(item);setRenderCtxMenu(null);}}
+                  onNudge={(id,amount)=>dispatch({type:"NUDGE_CABINET",id,amount})}
                 />
                 {/* Context menu */}
                 {renderCtxMenu && (()=>{

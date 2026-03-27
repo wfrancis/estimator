@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState, useRef } from "react";
 
 // ── Shared rendering constants (mirrored from App.jsx Render) ──
 const SC = 2.5;
@@ -54,7 +54,7 @@ function Face({ cab, cx, cy, w, h }) {
   return <>{els}</>;
 }
 
-export default function InteractiveRender({ spec, selectedId, onSelect, onDoubleClick, onContextMenu: onCtxMenu, onGapSelect }) {
+export default function InteractiveRender({ spec, selectedId, onSelect, onDoubleClick, onContextMenu: onCtxMenu, onGapSelect, onNudge }) {
   if (!spec?.cabinets?.length) return <div style={{ color: "#555", padding: 20, textAlign: "center" }}>No cabinets loaded</div>;
 
   const cabMap = {}; spec.cabinets.forEach(c => { cabMap[c.id] = c; });
@@ -109,6 +109,42 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
     if (onGapSelect) onGapSelect(item);
   }, [onGapSelect]);
 
+  // ── Drag-to-move state ──
+  const [drag, setDrag] = useState(null); // { id, startClientX, dx }
+  const svgRef = useRef(null);
+  const dragThreshold = 4; // px before drag starts
+
+  const onPointerDown = useCallback((id) => (e) => {
+    if (e.button !== 0) return; // left click only
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    onSelect(id);
+    setDrag({ id, startClientX: e.clientX, dx: 0, started: false });
+  }, [onSelect]);
+
+  const onPointerMove = useCallback((e) => {
+    if (!drag) return;
+    const rawDx = e.clientX - drag.startClientX;
+    if (!drag.started && Math.abs(rawDx) < dragThreshold) return;
+    // Snap dx to nearest inch in SVG coords — need to account for SVG scale
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const svgScale = rect.width / svg.viewBox.baseVal.width;
+    const dxSvg = rawDx / svgScale; // px → SVG units
+    const snapInch = Math.round(dxSvg / SC); // SVG units → inches, snapped
+    const snappedDx = snapInch * SC * svgScale; // back to screen px
+    setDrag(d => ({ ...d, dx: snappedDx, dxInches: snapInch, started: true }));
+  }, [drag]);
+
+  const onPointerUp = useCallback((e) => {
+    if (!drag) return;
+    if (drag.started && drag.dxInches && drag.dxInches !== 0 && onNudge) {
+      onNudge(drag.id, drag.dxInches);
+    }
+    setDrag(null);
+  }, [drag, onNudge]);
+
   const highlightRect = (x, cy, w, h, row) => {
     const color = row === "base" ? "#D94420" : "#1a6fbf";
     return (
@@ -121,8 +157,9 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
   return (
     <div style={{ background: "#fff", borderRadius: 10, overflow: "auto", border: "1px solid rgba(26,26,46,0.12)", padding: 10 }}
       onClick={() => onSelect(null)}>
-      <svg width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`}
-        style={{ display: "block", maxWidth: "100%", minWidth: svgW, cursor: "pointer" }}>
+      <svg ref={svgRef} width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`}
+        onPointerMove={onPointerMove} onPointerUp={onPointerUp}
+        style={{ display: "block", maxWidth: "100%", minWidth: svgW, cursor: drag?.started ? "grabbing" : "pointer" }}>
         <Box3D cx={PAD} cy={CTTOP} w={ctW} h={1.5} depth={25.5} front="none" top="none" side="none" stroke="#888" sw={0.8} />
 
         {baseItems.map(bi => {
@@ -137,13 +174,16 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
           }
           const c = bi.cab, ch = c.height || 34.5, d = c.depth || 24, cy = FLOOR - TOE - ch * SC;
           const isSelected = selectedId === bi.id;
-          return (<g key={`b-${bi.id}`} onClick={handleClick(bi.id)} onDoubleClick={handleDblClick(bi.id)} onContextMenu={handleContextMenu(bi.id, "base")} style={{ cursor: "pointer" }}>
+          const isDragging = drag?.started && drag.id === bi.id;
+          const dragTx = isDragging ? `translate(${drag.dx / (svgRef.current ? svgRef.current.getBoundingClientRect().width / svgW : 1)}, 0)` : undefined;
+          return (<g key={`b-${bi.id}`} onClick={!drag?.started ? handleClick(bi.id) : undefined} onDoubleClick={handleDblClick(bi.id)} onContextMenu={handleContextMenu(bi.id, "base")} onPointerDown={onPointerDown(bi.id)} style={{ cursor: isDragging ? "grabbing" : "grab" }} transform={dragTx}>
             {isSelected && highlightRect(bi.x, cy, c.width, ch, "base")}
             <Box3D cx={bi.x} cy={cy} w={c.width} h={ch} depth={d} />
             <rect x={bi.x + 2 * SC} y={FLOOR - TOE} width={Math.max(0, c.width * SC - 4 * SC)} height={TOE} fill="none" stroke="#ccc" strokeWidth={0.4} />
             <Face cab={c} cx={bi.x} cy={cy} w={c.width} h={ch} />
             <text x={bi.x + c.width * SC / 2} y={FLOOR + 13} textAnchor="middle" fontSize={9} fill="#D94420" fontWeight={700} fontFamily="monospace">{bi.id}</text>
             <text x={bi.x + c.width * SC / 2} y={FLOOR + 23} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width}w {ch}h {d}d</text>
+            {isDragging && <text x={bi.x + c.width * SC / 2} y={cy - 8} textAnchor="middle" fontSize={10} fill="#D94420" fontWeight={700} fontFamily="monospace">{drag.dxInches > 0 ? "+" : ""}{drag.dxInches}"</text>}
           </g>);
         })}
 
@@ -159,12 +199,15 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
           }
           const c = wi.cab, ch = c.height || 30, d = c.depth || 12;
           const isSelected = selectedId === wi.id;
-          return (<g key={`w-${wi.id}`} onClick={handleClick(wi.id)} onDoubleClick={handleDblClick(wi.id)} onContextMenu={handleContextMenu(wi.id, "wall")} style={{ cursor: "pointer" }}>
+          const isDragging = drag?.started && drag.id === wi.id;
+          const dragTx = isDragging ? `translate(${drag.dx / (svgRef.current ? svgRef.current.getBoundingClientRect().width / svgW : 1)}, 0)` : undefined;
+          return (<g key={`w-${wi.id}`} onClick={!drag?.started ? handleClick(wi.id) : undefined} onDoubleClick={handleDblClick(wi.id)} onContextMenu={handleContextMenu(wi.id, "wall")} onPointerDown={onPointerDown(wi.id)} style={{ cursor: isDragging ? "grabbing" : "grab" }} transform={dragTx}>
             {isSelected && highlightRect(wi.x, WTOP, c.width, ch, "wall")}
             <Box3D cx={wi.x} cy={WTOP} w={c.width} h={ch} depth={d} front="#fff" top="#eee" side="#ddd" />
             <Face cab={c} cx={wi.x} cy={WTOP} w={c.width} h={ch} />
             <text x={wi.x + c.width * SC / 2} y={WTOP - 5} textAnchor="middle" fontSize={9} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{wi.id}</text>
             <text x={wi.x + c.width * SC / 2} y={WTOP - 15} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width}x{ch}x{d}</text>
+            {isDragging && <text x={wi.x + c.width * SC / 2} y={WTOP - 22} textAnchor="middle" fontSize={10} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{drag.dxInches > 0 ? "+" : ""}{drag.dxInches}"</text>}
           </g>);
         })}
 
