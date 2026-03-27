@@ -260,6 +260,7 @@ export default function App() {
 
   const [selectedId, setSelectedId] = useState(null);
   const [selectedGapItem, setSelectedGapItem] = useState(null);
+  const [renderCtxMenu, setRenderCtxMenu] = useState(null); // { x, y, id, row }
 
   // Ref to the width input in the bottom bar — passed to GridEditor for double-click focus
   const widthInputRef = useRef(null);
@@ -285,12 +286,33 @@ export default function App() {
       }
       if (e.key === "Escape") { setSelectedId(null); setSelectedGapItem(null); return; }
       if (e.key === "Delete" || e.key === "Backspace") {
-        dispatch({ type: "DELETE_CABINET", id: selectedId }); setSelectedId(null);
+        dispatch({ type: "DELETE_CABINET", id: selectedId }); setSelectedId(null); return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const allItems = [...(spec.base_layout || []), ...(spec.wall_layout || [])].filter(i => i.ref);
+        const idx = allItems.findIndex(i => i.ref === selectedId);
+        if (idx !== -1) {
+          const next = e.shiftKey
+            ? allItems[(idx - 1 + allItems.length) % allItems.length]
+            : allItems[(idx + 1) % allItems.length];
+          if (next) setSelectedId(next.ref);
+        }
+        return;
+      }
+      if ((e.key === "d" || e.key === "D") && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        const cabMap2 = {}; (spec.cabinets || []).forEach(c => { cabMap2[c.id] = c; });
+        const sel2 = cabMap2[selectedId]; if (!sel2) return;
+        const newId = sel2.row === "base" ? `B${Date.now() % 10000}` : `W${Date.now() % 10000}`;
+        dispatch({ type: "DUPLICATE_CABINET", id: selectedId, newId });
+        setSelectedId(newId);
+        return;
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [tab, selectedId, dispatch, undo, redo]);
+  }, [tab, selectedId, spec, dispatch, undo, redo]);
 
   const loadWireframe = () => { dispatch({ type: "LOAD_SPEC", spec: JSON.parse(JSON.stringify(WIREFRAME_SPEC)) }); setMode("loaded"); setTab("render"); };
 
@@ -455,8 +477,33 @@ export default function App() {
               </div>
 
               {/* Interactive 3D Render */}
-              <div style={{flex:"1 1 auto",overflow:"auto",background:"#fff"}}>
-                <InteractiveRender spec={spec} selectedId={selectedId} onSelect={handleSelect}/>
+              <div style={{flex:"1 1 auto",overflow:"auto",background:"#fff"}} onClick={()=>setRenderCtxMenu(null)}>
+                <InteractiveRender spec={spec} selectedId={selectedId} onSelect={(id)=>{handleSelect(id);setRenderCtxMenu(null);}}
+                  onDoubleClick={(id)=>{setSelectedId(id);setTimeout(()=>{if(widthInputRef.current){widthInputRef.current.focus();widthInputRef.current.select();}},50);}}
+                  onContextMenu={(ctx)=>setRenderCtxMenu(ctx)}
+                  onGapSelect={(item)=>{setSelectedId(null);setSelectedGapItem(item);setRenderCtxMenu(null);}}
+                />
+                {/* Context menu */}
+                {renderCtxMenu && (()=>{
+                  const cabMap2={}; (spec.cabinets||[]).forEach(c=>{cabMap2[c.id]=c;});
+                  const ctxCab=cabMap2[renderCtxMenu.id];
+                  if(!ctxCab) return null;
+                  const items=[
+                    {label:"Duplicate (⌘D)",action:()=>{const newId=ctxCab.row==="base"?`B${Date.now()%10000}`:`W${Date.now()%10000}`;dispatch({type:"DUPLICATE_CABINET",id:renderCtxMenu.id,newId});setSelectedId(newId);setRenderCtxMenu(null);}},
+                    {label:"Set Width…",action:()=>{setSelectedId(renderCtxMenu.id);setRenderCtxMenu(null);setTimeout(()=>{if(widthInputRef.current){widthInputRef.current.focus();widthInputRef.current.select();}},50);}},
+                    {label:"+ Space Left",action:()=>{const layout=spec[ctxCab.row==="base"?"base_layout":"wall_layout"]||[];const pos=layout.findIndex(i=>i.ref===renderCtxMenu.id);dispatch({type:"ADD_GAP",row:ctxCab.row,position:Math.max(pos,0),gap:{type:"filler",label:"Filler",width:3}});setRenderCtxMenu(null);}},
+                    {label:"+ Space Right",action:()=>{const layout=spec[ctxCab.row==="base"?"base_layout":"wall_layout"]||[];const pos=layout.findIndex(i=>i.ref===renderCtxMenu.id);dispatch({type:"ADD_GAP",row:ctxCab.row,position:pos+1,gap:{type:"filler",label:"Filler",width:3}});setRenderCtxMenu(null);}},
+                    {label:"Delete",action:()=>{dispatch({type:"DELETE_CABINET",id:renderCtxMenu.id});setSelectedId(null);setRenderCtxMenu(null);},color:"#e04040"},
+                  ];
+                  return <div style={{position:"fixed",left:renderCtxMenu.x,top:renderCtxMenu.y,background:"#1a1a2a",border:"1px solid #2a2a3a",borderRadius:8,padding:4,zIndex:9999,minWidth:160,boxShadow:"0 8px 24px rgba(0,0,0,0.5)"}}
+                    onClick={e=>e.stopPropagation()}>
+                    {items.map((it,i)=><div key={i} onClick={it.action}
+                      style={{padding:"6px 12px",fontSize:12,color:it.color||"#ddd",cursor:"pointer",borderRadius:4,fontFamily:"'DM Sans',sans-serif"}}
+                      onMouseEnter={e=>e.target.style.background="#2a2a3a"} onMouseLeave={e=>e.target.style.background="transparent"}>
+                      {it.label}
+                    </div>)}
+                  </div>;
+                })()}
               </div>
 
               {/* Bottom bar — cabinet selected */}
@@ -487,10 +534,29 @@ export default function App() {
                 />
               )}
 
+              {/* Bottom bar — gap selected */}
+              {!sel && selectedGapItem && (
+                <div style={{flexShrink:0,background:"#0c0c14",borderTop:"1px solid #1a1a2a",padding:"8px 10px",display:"flex",alignItems:"center",gap:8,fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>
+                  <span style={{color:"#888",fontWeight:700}}>{(selectedGapItem.label||selectedGapItem.id||"GAP").toUpperCase()}</span>
+                  <span style={{color:"#555"}}>width</span>
+                  <input type="number" value={selectedGapItem.width||0}
+                    onChange={e=>{const v=parseFloat(e.target.value);if(!isNaN(v)&&v>0){
+                      const row=spec.base_layout?.includes(selectedGapItem)?"base":"wall";
+                      const layout=spec[row==="base"?"base_layout":"wall_layout"]||[];
+                      const idx=layout.indexOf(selectedGapItem);
+                      if(idx!==-1)dispatch({type:"UPDATE_GAP",row,index:idx,width:v});
+                    }}}
+                    style={{width:50,height:28,background:"#0a0a14",border:"1px solid #2a2a3a",borderRadius:4,color:"#fff",textAlign:"center",fontSize:13,fontFamily:"'JetBrains Mono',monospace"}}
+                  />"
+                  <span style={{flex:1}}/>
+                  <button onClick={()=>setSelectedGapItem(null)} style={{height:28,padding:"0 10px",borderRadius:4,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#888",fontSize:11,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Done</button>
+                </div>
+              )}
+
               {/* Bottom bar — nothing selected */}
               {!sel && !selectedGapItem && (
                 <div style={{flexShrink:0,background:"#0c0c14",borderTop:"1px solid #1a1a2a",padding:"8px 10px",display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{color:"#444",fontSize:12,fontFamily:"'DM Sans',sans-serif"}}>Click a cabinet to edit.</span>
+                  <span style={{color:"#444",fontSize:12,fontFamily:"'DM Sans',sans-serif"}}>Click a cabinet to edit. <span style={{color:"#333"}}>Tab: next · ⌘D: duplicate · Right-click: more</span></span>
                   <span style={{flex:1}}/>
                   <button onClick={()=>{
                     const id=generateId("base",spec),cab=defaultCabinet("base");cab.id=id;

@@ -54,7 +54,7 @@ function Face({ cab, cx, cy, w, h }) {
   return <>{els}</>;
 }
 
-export default function InteractiveRender({ spec, selectedId, onSelect }) {
+export default function InteractiveRender({ spec, selectedId, onSelect, onDoubleClick, onContextMenu: onCtxMenu, onGapSelect }) {
   if (!spec?.cabinets?.length) return <div style={{ color: "#555", padding: 20, textAlign: "center" }}>No cabinets loaded</div>;
 
   const cabMap = {}; spec.cabinets.forEach(c => { cabMap[c.id] = c; });
@@ -92,6 +92,23 @@ export default function InteractiveRender({ spec, selectedId, onSelect }) {
     onSelect(id);
   }, [onSelect]);
 
+  const handleDblClick = useCallback((id) => (e) => {
+    e.stopPropagation();
+    if (onDoubleClick) onDoubleClick(id);
+  }, [onDoubleClick]);
+
+  const handleContextMenu = useCallback((id, row) => (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    onSelect(id);
+    if (onCtxMenu) onCtxMenu({ x: e.clientX, y: e.clientY, id, row });
+  }, [onSelect, onCtxMenu]);
+
+  const handleGapClick = useCallback((item) => (e) => {
+    e.stopPropagation();
+    if (onGapSelect) onGapSelect(item);
+  }, [onGapSelect]);
+
   const highlightRect = (x, cy, w, h, row) => {
     const color = row === "base" ? "#D94420" : "#1a6fbf";
     return (
@@ -112,7 +129,7 @@ export default function InteractiveRender({ spec, selectedId, onSelect }) {
           if (!bi.cab) {
             const isFridge = bi.id === "fridge" || bi.item?.label?.toLowerCase()?.includes("fridge");
             const h = isFridge ? 70 : 34.5, cy = isFridge ? (FLOOR - h * SC) : (FLOOR - TOE - 34.5 * SC);
-            return (<g key={`a-${bi.id}`}>
+            return (<g key={`a-${bi.id}`} onClick={handleGapClick(bi.item)} style={{ cursor: "pointer" }}>
               <Box3D cx={bi.x} cy={cy} w={bi.w} h={h} depth={isFridge ? 28 : 24} front="#f8f8f8" top="#eee" side="#e0e0e0" stroke="#aaa" sw={0.7} dash="5,3" />
               <text x={bi.x + bi.w * SC / 2} y={cy + (h * SC) / 2 + 3} textAnchor="middle" fontSize={8} fill="#aaa" fontFamily="monospace">{(bi.item?.label || bi.id).toUpperCase()}</text>
               <text x={bi.x + bi.w * SC / 2} y={FLOOR + 13} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{bi.w}"</text>
@@ -120,7 +137,7 @@ export default function InteractiveRender({ spec, selectedId, onSelect }) {
           }
           const c = bi.cab, ch = c.height || 34.5, d = c.depth || 24, cy = FLOOR - TOE - ch * SC;
           const isSelected = selectedId === bi.id;
-          return (<g key={`b-${bi.id}`} onClick={handleClick(bi.id)} style={{ cursor: "pointer" }}>
+          return (<g key={`b-${bi.id}`} onClick={handleClick(bi.id)} onDoubleClick={handleDblClick(bi.id)} onContextMenu={handleContextMenu(bi.id, "base")} style={{ cursor: "pointer" }}>
             {isSelected && highlightRect(bi.x, cy, c.width, ch, "base")}
             <Box3D cx={bi.x} cy={cy} w={c.width} h={ch} depth={d} />
             <rect x={bi.x + 2 * SC} y={FLOOR - TOE} width={Math.max(0, c.width * SC - 4 * SC)} height={TOE} fill="none" stroke="#ccc" strokeWidth={0.4} />
@@ -142,7 +159,7 @@ export default function InteractiveRender({ spec, selectedId, onSelect }) {
           }
           const c = wi.cab, ch = c.height || 30, d = c.depth || 12;
           const isSelected = selectedId === wi.id;
-          return (<g key={`w-${wi.id}`} onClick={handleClick(wi.id)} style={{ cursor: "pointer" }}>
+          return (<g key={`w-${wi.id}`} onClick={handleClick(wi.id)} onDoubleClick={handleDblClick(wi.id)} onContextMenu={handleContextMenu(wi.id, "wall")} style={{ cursor: "pointer" }}>
             {isSelected && highlightRect(wi.x, WTOP, c.width, ch, "wall")}
             <Box3D cx={wi.x} cy={WTOP} w={c.width} h={ch} depth={d} front="#fff" top="#eee" side="#ddd" />
             <Face cab={c} cx={wi.x} cy={WTOP} w={c.width} h={ch} />
