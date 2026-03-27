@@ -191,10 +191,20 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
 
         {wallItems.map(wi => {
           if (!wi.cab) {
-            const hh = 16, hy = WBOT + 8;
-            return (<g key={`h-${wi.id}`}>
-              <rect x={wi.x + 6} y={hy} width={Math.max(wi.w * SC - 12, 1)} height={hh} fill="#f4f4f4" stroke="#aaa" strokeWidth={0.7} rx={3} />
-              <text x={wi.x + wi.w * SC / 2} y={hy + 11} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">HOOD</text>
+            const gapW = wi.w * SC, midX = wi.x + gapW / 2;
+            const isFiller = wi.item?.type === "filler" || wi.item?.type === "spacer";
+            const label = isFiller ? "" : (wi.item?.label || wi.id || "").toUpperCase() || "HOOD";
+            // Dimension line between cabinets
+            const dimY = WTOP + (WBOT - WTOP) / 2;
+            return (<g key={`h-${wi.id}`} onClick={handleGapClick(wi.item)} style={{ cursor: "pointer" }}>
+              {/* Dashed dimension line */}
+              <line x1={wi.x + 2} y1={dimY} x2={wi.x + gapW - 2} y2={dimY} stroke="#999" strokeWidth={0.8} strokeDasharray="3,2" />
+              <line x1={wi.x + 2} y1={dimY - 5} x2={wi.x + 2} y2={dimY + 5} stroke="#999" strokeWidth={0.8} />
+              <line x1={wi.x + gapW - 2} y1={dimY - 5} x2={wi.x + gapW - 2} y2={dimY + 5} stroke="#999" strokeWidth={0.8} />
+              {/* Width label */}
+              <text x={midX} y={dimY - 5} textAnchor="middle" fontSize={9} fill="#888" fontWeight={600} fontFamily="monospace">{wi.w}"</text>
+              {/* Type label below */}
+              {label && <text x={midX} y={dimY + 12} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{label}</text>}
             </g>);
           }
           const c = wi.cab, ch = c.height || 30, d = c.depth || 12;
