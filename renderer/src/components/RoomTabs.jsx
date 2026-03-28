@@ -53,6 +53,10 @@ export default function RoomTabs({ rooms, activeRoomId, onSelect, onAdd, onDelet
         <div
           key={r.id}
           onClick={() => onSelect?.(r.id)}
+          onDoubleClick={() => {
+            setRenameVal(r.name);
+            setRenamingId(r.id);
+          }}
           onContextMenu={(e) => {
             e.preventDefault();
             setContextMenu({ rid: r.id, x: e.clientX, y: e.clientY });

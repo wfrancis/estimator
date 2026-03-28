@@ -85,10 +85,22 @@ def get_mime_from_bytes(data):
     return 'image/png'
 
 
-def extract_from_bytes(image_bytes, api_key, model="claude-sonnet-4-6"):
-    """Extract cabinet spec from raw image bytes. Returns dict (UCS JSON spec)."""
+def extract_from_bytes(image_bytes, api_key, model="claude-sonnet-4-6", photo_bytes=None):
+    """Extract cabinet spec from raw image bytes. Returns dict (UCS JSON spec).
+    If photo_bytes is provided, sends both the photo and wireframe for better accuracy."""
     mime = get_mime_from_bytes(image_bytes)
     image_b64 = base64.b64encode(image_bytes).decode()
+
+    # Build content array — photo first (if provided), then wireframe
+    content = []
+    if photo_bytes:
+        photo_mime = get_mime_from_bytes(photo_bytes)
+        photo_b64 = base64.b64encode(photo_bytes).decode()
+        content.append({"type": "text", "text": "Above is the original photo of the space. Below is the wireframe drawing. Use BOTH to extract accurate cabinet specs."})
+        content.append({"type": "image", "source": {"type": "base64", "media_type": photo_mime, "data": photo_b64}})
+
+    content.append({"type": "image", "source": {"type": "base64", "media_type": mime, "data": image_b64}})
+    content.append({"type": "text", "text": "Extract the complete cabinet specification from this wireframe. Return ONLY the JSON."})
 
     headers = {
         "Content-Type": "application/json",
@@ -102,10 +114,7 @@ def extract_from_bytes(image_bytes, api_key, model="claude-sonnet-4-6"):
         "system": PROMPT,
         "messages": [{
             "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": mime, "data": image_b64}},
-                {"type": "text", "text": "Extract the complete cabinet specification from this wireframe. Return ONLY the JSON."}
-            ]
+            "content": content
         }]
     }
 
