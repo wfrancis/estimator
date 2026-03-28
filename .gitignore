@@ -9,6 +9,9 @@ build/
 .venv/
 venv/
 
+# Data (SQLite DB + uploaded images)
+data/
+
 # Frontend
 node_modules/
 frontend/dist/
