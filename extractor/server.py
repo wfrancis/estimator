@@ -50,7 +50,7 @@ app.mount("/images", StaticFiles(directory=str(db.IMAGE_DIR)), name="images")
 async def extract_cabinets_raw(
     image: UploadFile = File(...),
     photo: UploadFile = File(None),
-    model: str = "gpt-5.4"
+    model: str = "claude-sonnet-4-6"
 ):
     """Extract cabinet spec from wireframe image (standalone, no project context)."""
     image_bytes = await image.read()

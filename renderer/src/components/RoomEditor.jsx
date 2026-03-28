@@ -217,7 +217,7 @@ export default function RoomEditor({ roomId, projectId, projectStatus, onSaveSta
   const handleExtract = async () => {
     if (!wireframePreview || !photoPreview) return;
     setUploading(true);
-    setUploadStatus("Analyzing photo + wireframe with GPT-5.4...");
+    setUploadStatus("Analyzing photo + wireframe with AI...");
     try {
       const extracted = await api.extractForRoom(roomId);
       extracted.cabinets?.forEach(c => {
@@ -338,7 +338,7 @@ export default function RoomEditor({ roomId, projectId, projectStatus, onSaveSta
           ) : (
             <button onClick={handleExtract} disabled={!photoPreview || !wireframePreview || uploading}
               style={{ width: "100%", padding: "14px 0", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: photoPreview && wireframePreview ? "pointer" : "default", fontFamily: "inherit", border: "none", marginBottom: 16, transition: "all 0.15s", letterSpacing: "-0.01em", background: photoPreview && wireframePreview ? "#D94420" : "#1a1a2a", color: photoPreview && wireframePreview ? "#fff" : "#444", opacity: photoPreview && wireframePreview ? 1 : 0.6 }}>
-              {photoPreview && wireframePreview ? "Extract Cabinets with GPT-5.4" : "Upload both images to continue"}
+              {photoPreview && wireframePreview ? "Extract Cabinets with AI" : "Upload both images to continue"}
             </button>
           )}
 
