@@ -279,11 +279,16 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
   const fileInputRef = useRef(null);
 
   // ── Auto-save (when inside a project/room context) ──
-  const [specVersion, setSpecVersion] = useState(0);
+  // ── Auto-save — uses refs to avoid re-render cascades ──
+  const specVersionRef = useRef(0);
   const [saveState, setSaveState] = useState("idle"); // idle | saving | saved | error
   const saveTimer = useRef(null);
   const pendingSave = useRef(false);
   const lastSaveTime = useRef(Date.now());
+  const specRef = useRef(spec);
+  const modeRef = useRef(mode);
+  specRef.current = spec;
+  modeRef.current = mode;
 
   // Load spec from DB when a roomId is provided
   useEffect(() => {
@@ -300,46 +305,46 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
           dispatch({ type: "LOAD_SPEC", spec: r.spec });
           setMode("loaded"); setTab("render");
         }
-        setSpecVersion(r.spec_version || 0);
+        specVersionRef.current = r.spec_version || 0;
         if (r.photo_url) setPhotoPreview(api.imageUrl(r.photo_url));
         if (r.wireframe_url) setWireframePreview(api.imageUrl(r.wireframe_url));
       } catch (e) { console.error("Failed to load room:", e); }
     })();
   }, [roomId]);
 
-  // Auto-save: 1s debounce after spec changes
+  // doSave reads from refs — no spec/version in deps, no re-render cascade
   const doSave = useCallback(async () => {
-    if (!roomId || mode !== "loaded") return;
+    if (!roomId || modeRef.current !== "loaded") return;
     pendingSave.current = false;
     setSaveState("saving");
     try {
-      const result = await api.saveRoomSpec(roomId, spec, specVersion);
-      setSpecVersion(result.version);
+      const result = await api.saveRoomSpec(roomId, specRef.current, specVersionRef.current);
+      specVersionRef.current = result.version;
       setSaveState("saved");
       lastSaveTime.current = Date.now();
-      try { localStorage.setItem(`room_spec_${roomId}`, JSON.stringify({ spec, version: result.version, ts: Date.now() })); } catch {}
+      try { localStorage.setItem(`room_spec_${roomId}`, JSON.stringify({ spec: specRef.current, version: result.version, ts: Date.now() })); } catch {}
       setTimeout(() => setSaveState("idle"), 3000);
     } catch (e) {
       setSaveState("error");
       console.error("Auto-save failed:", e);
     }
-  }, [roomId, spec, specVersion, mode]);
+  }, [roomId]); // only depends on roomId — stable across spec changes
 
+  // Watch spec changes — just set a debounce timer, no re-render
   useEffect(() => {
     if (!roomId || mode !== "loaded") return;
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => doSave(), 1000);
-    if (Date.now() - lastSaveTime.current > 5000) { clearTimeout(saveTimer.current); doSave(); }
     pendingSave.current = true;
     return () => clearTimeout(saveTimer.current);
-  }, [spec, roomId, mode]);
+  }, [spec, roomId, mode, doSave]);
 
   // Flush save on unmount (room switch / navigate away)
   useEffect(() => {
     return () => {
       clearTimeout(saveTimer.current);
       if (pendingSave.current && roomId) {
-        api.beaconSaveSpec(roomId, spec, specVersion);
+        api.beaconSaveSpec(roomId, specRef.current, specVersionRef.current);
       }
     };
   }, [roomId]);
@@ -349,12 +354,12 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
     const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
-        if (roomId && mode === "loaded") doSave();
+        if (roomId && modeRef.current === "loaded") doSave();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [doSave, roomId, mode]);
+  }, [doSave, roomId]);
 
   // Global keyboard handler for Render tab — arrow keys to nudge/reorder cabinets
   useEffect(() => {
@@ -424,6 +429,7 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
     if (!file || !(file instanceof File)) return;
     setPhotoFile(file);
     setPhotoPreview(URL.createObjectURL(file));
+    setUploadStatus(""); // Clear any previous error
     if (roomId) api.uploadImage(roomId, file, "photo").catch(err => console.error("Photo upload:", err));
   };
 
@@ -432,6 +438,7 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
     if (!file || !(file instanceof File)) return;
     setWireframeFile(file);
     setWireframePreview(URL.createObjectURL(file));
+    setUploadStatus(""); // Clear any previous error
     if (roomId) api.uploadImage(roomId, file, "wireframe").catch(err => console.error("Wireframe upload:", err));
   };
 
