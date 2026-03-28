@@ -96,6 +96,18 @@ The extraction system exists to identify **cabinets**. Nothing else matters.
 
 If the answer to those three questions is yes, the extraction is good. Everything else is noise.
 
+## HARD CONSTRAINT — No Rewrites, Only Surgical Extractions
+
+**NEVER rewrite a file from scratch when refactoring.** When splitting a monolith into smaller files:
+
+1. **Copy-paste the exact code** into the new file, then adjust imports/exports. Do NOT rewrite from memory.
+2. **Verify prop contracts:** After ANY refactor that moves component calls to a new file, grep for the component's `export default function` signature and confirm every prop is passed correctly at every call site. Prop name mismatches (e.g. `cab` vs `cabinet`) are silent failures.
+3. **One concern per commit:** Never bundle backend + frontend + data model + architecture in a single commit. Split into: schema/DB first → API second → frontend decomposition third → wiring verification fourth.
+4. **Test interactions, not just rendering:** A component that renders correctly but has broken callbacks (edit, delete, move, context menu) is a broken component. Verify the EDIT workflow, not just the visual output.
+5. **No phantom props:** Never pass props a component doesn't accept. Never omit props a component requires. If unsure, read the function signature before writing the JSX.
+
+**Why:** On 2026-03-28, a "frontend upgrade" rewrote RoomEditor.jsx from memory instead of extracting from App.jsx. Result: 15 missing/wrong props across 3 components, entire edit workflow broken, gap editing deleted, context menu deleted. The render looked fine — the damage was invisible until someone tried to edit a cabinet.
+
 ## HARD CONSTRAINT — Chrome MCP Verification Before Every Commit
 
 **NEVER commit code without verifying it works in Chrome MCP first.** Every change that touches UI or API must be tested with a real screenshot or API call before `git commit`. No exceptions.
