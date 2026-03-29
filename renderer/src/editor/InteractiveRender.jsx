@@ -183,6 +183,7 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
           const isDragging = drag?.started && drag.id === bi.id;
           const dragTx = isDragging ? `translate(${drag.dx / (svgRef.current ? svgRef.current.getBoundingClientRect().width / svgW : 1)}, 0)` : undefined;
           return (<g key={`b-${bi.id}`} onClick={!drag?.started ? handleClick(bi.id) : undefined} onDoubleClick={handleDblClick(bi.id)} onContextMenu={handleContextMenu(bi.id, "base")} onPointerDown={onPointerDown(bi.id)} style={{ cursor: isDragging ? "grabbing" : "grab" }} transform={dragTx}>
+            <rect x={bi.x - 4} y={cy - 4} width={c.width * SC + 8} height={ch * SC + 8 + TOE + 30} fill="transparent" />
             {isSelected && highlightRect(bi.x, cy, c.width, ch, "base")}
             <Box3D cx={bi.x} cy={cy} w={c.width} h={ch} depth={d} />
             <rect x={bi.x + 2 * SC} y={FLOOR - TOE} width={Math.max(0, c.width * SC - 4 * SC)} height={TOE} fill="none" stroke="#ccc" strokeWidth={0.4} />
@@ -216,6 +217,7 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
           const isDragging = drag?.started && drag.id === wi.id;
           const dragTx = isDragging ? `translate(${drag.dx / (svgRef.current ? svgRef.current.getBoundingClientRect().width / svgW : 1)}, 0)` : undefined;
           return (<g key={`w-${wi.id}`} onClick={!drag?.started ? handleClick(wi.id) : undefined} onDoubleClick={handleDblClick(wi.id)} onContextMenu={handleContextMenu(wi.id, "wall")} onPointerDown={onPointerDown(wi.id)} style={{ cursor: isDragging ? "grabbing" : "grab" }} transform={dragTx}>
+            <rect x={wi.x - 4} y={WTOP - 20} width={c.width * SC + 8} height={ch * SC + 28} fill="transparent" />
             {isSelected && highlightRect(wi.x, WTOP, c.width, ch, "wall")}
             <Box3D cx={wi.x} cy={WTOP} w={c.width} h={ch} depth={d} front="#fff" top="#eee" side="#ddd" />
             <Face cab={c} cx={wi.x} cy={WTOP} w={c.width} h={ch} />
