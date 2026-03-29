@@ -50,7 +50,7 @@ app.mount("/images", StaticFiles(directory=str(db.IMAGE_DIR)), name="images")
 async def extract_cabinets_raw(
     image: UploadFile = File(...),
     photo: UploadFile = File(None),
-    model: str = "claude-sonnet-4-6"
+    model: str = "gemini-3.1-pro-preview"
 ):
     """Extract cabinet spec from wireframe image (standalone, no project context)."""
     image_bytes = await image.read()
@@ -63,7 +63,7 @@ async def extract_cabinets_raw(
         if len(photo_bytes) < 100:
             photo_bytes = None
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+    api_key = os.environ.get("GOOGLE_API_KEY", "")
     if not api_key:
         raise HTTPException(500, "API key not set")
 
@@ -298,7 +298,7 @@ async def extract_for_room(rid: str):
     if not room.get("wireframe_id"):
         raise HTTPException(400, "Room has no wireframe image. Upload one first.")
 
-    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+    api_key = os.environ.get("GOOGLE_API_KEY", "")
     if not api_key:
         raise HTTPException(500, "API key not set")
 
@@ -328,7 +328,7 @@ async def extract_for_room(rid: str):
             photo_bytes = photo_path.read_bytes()
 
     # Run extraction
-    model = "claude-sonnet-4-6"
+    model = "gemini-3.1-pro-preview"
     start_time = time.time()
     error_msg = None
     status = "success"
@@ -375,7 +375,7 @@ async def root():
 
 @app.get("/health")
 async def health():
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("GOOGLE_API_KEY", "")
     return {
         "status": "ok",
         "service": "cabinet-spec-tool",

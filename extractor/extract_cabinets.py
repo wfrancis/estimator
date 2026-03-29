@@ -85,51 +85,39 @@ def get_mime_from_bytes(data):
     return 'image/png'
 
 
-def extract_from_bytes(image_bytes, api_key, model="claude-sonnet-4-6", photo_bytes=None):
-    """Extract cabinet spec from raw image bytes. Returns dict (UCS JSON spec).
+def extract_from_bytes(image_bytes, api_key, model="gemini-3.1-pro-preview", photo_bytes=None):
+    """Extract cabinet spec from raw image bytes using Google Gemini. Returns dict (UCS JSON spec).
     If photo_bytes is provided, sends both the photo and wireframe for better accuracy."""
-    mime = get_mime_from_bytes(image_bytes)
-    image_b64 = base64.b64encode(image_bytes).decode()
+    from google import genai
+    from google.genai import types
 
-    # Build content array — photo first (if provided), then wireframe
-    content = []
+    client = genai.Client(api_key=api_key)
+
+    # Build content parts — photo first (if provided), then wireframe
+    parts = []
     if photo_bytes:
         photo_mime = get_mime_from_bytes(photo_bytes)
-        photo_b64 = base64.b64encode(photo_bytes).decode()
-        content.append({"type": "text", "text": "Above is the original photo of the space. Below is the wireframe drawing. Use BOTH to extract accurate cabinet specs."})
-        content.append({"type": "image", "source": {"type": "base64", "media_type": photo_mime, "data": photo_b64}})
+        parts.append(types.Part.from_text(text="Above is the original photo of the space. Below is the wireframe drawing. Use BOTH to extract accurate cabinet specs."))
+        parts.append(types.Part.from_bytes(data=photo_bytes, mime_type=photo_mime))
 
-    content.append({"type": "image", "source": {"type": "base64", "media_type": mime, "data": image_b64}})
-    content.append({"type": "text", "text": "Extract the complete cabinet specification from this wireframe. Return ONLY the JSON."})
+    mime = get_mime_from_bytes(image_bytes)
+    parts.append(types.Part.from_bytes(data=image_bytes, mime_type=mime))
+    parts.append(types.Part.from_text(text="Extract the complete cabinet specification from this wireframe. Return ONLY the JSON."))
 
-    headers = {
-        "Content-Type": "application/json",
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01"
-    }
+    response = client.models.generate_content(
+        model=model,
+        contents=parts,
+        config=types.GenerateContentConfig(
+            system_instruction=PROMPT,
+            max_output_tokens=8192,
+            temperature=0.1,
+            response_mime_type="application/json",
+        ),
+    )
 
-    body = {
-        "model": model,
-        "max_tokens": 4096,
-        "system": PROMPT,
-        "messages": [{
-            "role": "user",
-            "content": content
-        }]
-    }
-
-    resp = httpx.post("https://api.anthropic.com/v1/messages", headers=headers, json=body, timeout=120)
-
-    if resp.status_code != 200:
-        raise ValueError(f"API Error {resp.status_code}: {resp.text[:300]}")
-
-    data = resp.json()
-    if "error" in data:
-        raise ValueError(f"API Error: {json.dumps(data['error'])}")
-
-    raw = "".join(b.get("text", "") for b in data.get("content", []))
+    raw = response.text
     if not raw:
-        raise ValueError("Empty response from API")
+        raise ValueError("Empty response from Gemini")
 
     clean = raw.strip()
     if clean.startswith("```"):
