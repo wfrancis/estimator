@@ -1081,7 +1081,9 @@ function ProjectEditorWrapper() {
         if (roomParam && p.rooms?.some(r => r.id === roomParam)) {
           setActiveRoomId(roomParam);
         } else if (p.rooms?.length > 0) {
-          setActiveRoomId(p.rooms[0].id);
+          // Prefer the first room that has a spec or images, fallback to first room
+          const bestRoom = p.rooms.find(r => r.spec_json || r.photo_id || r.wireframe_id) || p.rooms[0];
+          setActiveRoomId(bestRoom.id);
         } else {
           // Auto-create first room
           const r = await api.createRoom(projectId);
