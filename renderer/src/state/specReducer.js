@@ -90,7 +90,7 @@ export default function specReducer(state, action) {
       // Find filler immediately before this cabinet
       const prevIdx = idx - 1;
       const prevItem = prevIdx >= 0 ? layout[prevIdx] : null;
-      const prevIsFiller = prevItem && !prevItem.ref && (prevItem.type === "filler" || prevItem.type === "spacer");
+      const prevIsFiller = prevItem && !prevItem.ref; // any non-cabinet layout item (filler, spacer, appliance, hood) is a gap
 
       if (amount > 0) {
         // Moving right — expand or create filler before
@@ -104,7 +104,7 @@ export default function specReducer(state, action) {
         const afterIdx = idx + 1;
         if (afterIdx < layout.length) {
           const afterItem = layout[afterIdx];
-          const afterIsFiller = afterItem && !afterItem.ref && (afterItem.type === "filler" || afterItem.type === "spacer");
+          const afterIsFiller = afterItem && !afterItem.ref; // any non-cabinet item is a gap
           if (afterIsFiller) {
             afterItem.width = (afterItem.width || 0) - amount;
             if (afterItem.width <= 0) layout.splice(afterIdx, 1);
@@ -123,7 +123,7 @@ export default function specReducer(state, action) {
         const afterIdx = idx + 1;
         if (afterIdx < layout.length) {
           const afterItem = layout[afterIdx];
-          const afterIsFiller = afterItem && !afterItem.ref && (afterItem.type === "filler" || afterItem.type === "spacer");
+          const afterIsFiller = afterItem && !afterItem.ref; // any non-cabinet item is a gap
           if (afterIsFiller) {
             afterItem.width = (afterItem.width || 0) + shrink;
           } else {
