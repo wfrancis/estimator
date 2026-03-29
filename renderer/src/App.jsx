@@ -259,6 +259,7 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
   const [mode, setMode] = useState("home"); // home | loaded
   const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState("");
+  const [extractionError, setExtractionError] = useState(null);
   const [wireframePreview, setWireframePreview] = useState(null);
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
@@ -463,6 +464,7 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
     setUploading(true);
     setUploadStatus("Uploading...");
     setJsonError(null);
+    setExtractionError(null);
     try {
       setUploadStatus(photo ? "Analyzing photo + wireframe with AI..." : "Analyzing wireframe with AI...");
       const formData = new FormData();
@@ -479,7 +481,7 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
       extracted.cabinets?.forEach(c => { if(!c.depth) c.depth = c.row==="wall"?12:24; if(!c.height) c.height = c.row==="wall"?30:34.5; if(!c.width) c.width=24; });
       dispatch({ type: "LOAD_SPEC", spec: extracted });
       setMode("loaded"); setTab("render");
-    } catch(err) { setUploadStatus(`Error: ${err.message}`); }
+    } catch(err) { setExtractionError(err.message); setUploadStatus(""); }
     finally { setUploading(false); }
   };
 
@@ -657,10 +659,6 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
               <div style={{textAlign:"center",padding:"14px 0",marginBottom:16}}>
                 <div style={{fontSize:13,fontWeight:600,color:"#D94420",animation:"pulse 1.5s infinite"}}>{uploadStatus}</div>
               </div>
-            ) : (uploadStatus?.startsWith("Error") || jsonError) ? (
-              <div style={{textAlign:"center",padding:"8px 0",marginBottom:12}}>
-                <div style={{fontSize:12,color:"#e04040",fontWeight:600}}>{uploadStatus || jsonError}</div>
-              </div>
             ) : (
               <button onClick={handleExtract} disabled={!photoFile || !wireframeFile || uploading}
                 style={{
@@ -672,6 +670,30 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
                 }}>
                 {photoFile && wireframeFile ? "Extract Cabinets with AI" : "Upload both images to continue"}
               </button>
+            )}
+
+            {/* Extraction Error Modal */}
+            {extractionError && (
+              <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999}}
+                onClick={(e) => { if(e.target === e.currentTarget) setExtractionError(null); }}>
+                <div style={{background:"#1a1a2a",border:"1px solid #333",borderRadius:12,padding:"28px 32px",maxWidth:420,width:"90%",textAlign:"center"}}>
+                  <div style={{fontSize:28,marginBottom:12}}>!</div>
+                  <div style={{fontSize:15,fontWeight:700,color:"#e04040",marginBottom:8}}>Extraction Failed</div>
+                  <div style={{fontSize:13,color:"#aaa",marginBottom:20,lineHeight:1.5}}>{extractionError}</div>
+                  <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+                    <button onClick={() => setExtractionError(null)}
+                      style={{padding:"10px 24px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",
+                        background:"transparent",color:"#888",border:"1px solid #333",fontFamily:"inherit"}}>
+                      Close
+                    </button>
+                    <button onClick={() => { setExtractionError(null); handleExtract(); }}
+                      style={{padding:"10px 24px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",
+                        background:"#D94420",color:"#fff",border:"none",fontFamily:"inherit"}}>
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Divider + secondary options */}
