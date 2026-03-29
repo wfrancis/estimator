@@ -770,7 +770,17 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
               </div>
 
               {/* Interactive 3D Render */}
-              <div style={{flex:"1 1 auto",overflow:"auto",background:"#fff"}} onClick={()=>setRenderCtxMenu(null)}>
+              <div style={{flex:"1 1 auto",overflow:"auto",background:"#fff",position:"relative"}} onClick={()=>setRenderCtxMenu(null)}>
+                {/* Photo reference overlay */}
+                {photoPreview && (
+                  <div onClick={(e)=>e.stopPropagation()} style={{position:"absolute",top:8,right:8,zIndex:5,cursor:"pointer"}}
+                    title="Click to toggle photo reference">
+                    <img src={photoPreview} alt="Reference"
+                      onClick={(e)=>{e.stopPropagation();const el=e.target;el.style.maxWidth=el.style.maxWidth==="300px"?"120px":"300px";}}
+                      style={{maxWidth:"120px",borderRadius:6,border:"2px solid #333",boxShadow:"0 2px 8px rgba(0,0,0,0.5)",opacity:0.85,transition:"max-width 0.2s"}}
+                    />
+                  </div>
+                )}
                 <InteractiveRender spec={spec} selectedId={selectedId} onSelect={(id)=>{handleSelect(id);setRenderCtxMenu(null);}}
                   onDoubleClick={(id)=>{setSelectedId(id);setTimeout(()=>{if(widthInputRef.current){widthInputRef.current.focus();widthInputRef.current.select();}},50);}}
                   onContextMenu={(ctx)=>setRenderCtxMenu(ctx)}
