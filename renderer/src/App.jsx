@@ -537,12 +537,16 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
         )}
         {hasSpec && (
           <div style={{display:"flex",gap:3}}>
-            {["render","plan","json"].map(t=>(
-              <button key={t} onClick={()=>setTab(t)} style={{
-                background:tab===t?"#1a1a2a":"transparent",color:tab===t?"#fff":"#555",
-                border:`1px solid ${tab===t?"#2a2a3a":"transparent"}`,
+            {[
+              ["render","Render"],["plan","Plan"],["json","JSON"],
+              ...(photoPreview?[["photo","Photo"]]:[]),
+              ...(wireframePreview?[["wireframe","Wireframe"]]:[]),
+            ].map(([key,label])=>(
+              <button key={key} onClick={()=>setTab(key)} style={{
+                background:tab===key?"#1a1a2a":"transparent",color:tab===key?"#fff":"#555",
+                border:`1px solid ${tab===key?"#2a2a3a":"transparent"}`,
                 padding:"4px 10px",borderRadius:5,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"
-              }}>{t==="render"?"Render":t==="plan"?"Plan":"JSON"}</button>
+              }}>{label}</button>
             ))}
           </div>
         )}
@@ -988,6 +992,18 @@ function EditorApp({ roomId, projectId, projectName, onBack }) {
             fontFamily:"'JetBrains Mono',monospace",overflow:"auto",maxHeight:"calc(100vh - 140px)"}}>
             {JSON.stringify(spec,null,2)}
           </pre>
+        )}
+
+        {hasSpec && tab === "photo" && photoPreview && (
+          <div style={{display:"flex",justifyContent:"center",alignItems:"flex-start",maxHeight:"calc(100vh - 140px)",overflow:"auto"}}>
+            <img src={photoPreview} alt="Original photo" style={{maxWidth:"100%",maxHeight:"calc(100vh - 160px)",borderRadius:8,objectFit:"contain"}}/>
+          </div>
+        )}
+
+        {hasSpec && tab === "wireframe" && wireframePreview && (
+          <div style={{display:"flex",justifyContent:"center",alignItems:"flex-start",maxHeight:"calc(100vh - 140px)",overflow:"auto"}}>
+            <img src={wireframePreview} alt="Wireframe drawing" style={{maxWidth:"100%",maxHeight:"calc(100vh - 160px)",borderRadius:8,objectFit:"contain"}}/>
+          </div>
         )}
       </div>
     </div>
