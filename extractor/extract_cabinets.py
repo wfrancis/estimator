@@ -109,7 +109,7 @@ def extract_from_bytes(image_bytes, api_key, model="gemini-3.1-pro-preview", pho
         contents=parts,
         config=types.GenerateContentConfig(
             system_instruction=PROMPT,
-            max_output_tokens=8192,
+            max_output_tokens=16384,
             temperature=0.1,
             response_mime_type="application/json",
         ),
