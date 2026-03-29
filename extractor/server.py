@@ -328,7 +328,7 @@ async def extract_for_room(rid: str):
             photo_bytes = photo_path.read_bytes()
 
     # Run extraction
-    model = "gpt-5.4"
+    model = "claude-sonnet-4-6"
     start_time = time.time()
     error_msg = None
     status = "success"
