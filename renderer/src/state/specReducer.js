@@ -158,7 +158,34 @@ export default function specReducer(state, action) {
 
     case "CHANGE_TYPE": {
       const cab = spec.cabinets.find((c) => c.id === action.id);
-      if (cab) cab.type = action.newType;
+      if (!cab) return spec;
+      cab.type = action.newType;
+      // Auto-update face to match common types
+      const t = action.newType;
+      if (t === "base_drawer_bank" || t === "drawer_bank") {
+        cab.face = { sections: [
+          { type: "drawer", count: 1, height: 6 },
+          { type: "drawer", count: 1, height: 6 },
+          { type: "drawer", count: 1, height: 6 },
+          { type: "drawer", count: 1 },
+        ]};
+      } else if (t === "base_sink" || t === "sink") {
+        cab.face = { sections: [
+          { type: "false_front", height: 6 },
+          { type: "door", count: cab.width >= 30 ? 2 : 1, hinge_side: cab.width >= 30 ? "both" : "left" },
+        ]};
+      } else if (t === "base_pullout" || t === "pullout") {
+        cab.face = { sections: [
+          { type: "drawer", count: 1, height: 6 },
+          { type: "drawer", count: 1, height: 6 },
+          { type: "drawer", count: 1, height: 6 },
+          { type: "drawer", count: 1, height: 6 },
+        ]};
+      } else if (t === "base_spice" || t === "spice") {
+        cab.face = { sections: [
+          { type: "door", count: 1, hinge_side: "left" },
+        ]};
+      }
       return spec;
     }
 
