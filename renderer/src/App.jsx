@@ -6,6 +6,7 @@ import GridEditor from "./editor/GridEditor";
 import CabinetEditBar from "./editor/CabinetEditBar";
 import { defaultCabinet, generateId } from "./state/specHelpers";
 import ProjectList from "./pages/ProjectList";
+import JsonEditor from "./components/JsonEditor";
 import * as api from "./api";
 
 // ═══════════════════════════════════════════════════════════
@@ -226,11 +227,12 @@ function Render({ spec }) {
             const tooClose = labelPositions.some(px => Math.abs(labelX - px) < 40);
             const labelYOff = tooClose ? -25 : -15;
             labelPositions.push(labelX);
+            const wcy = WTOP + (c.yOffset || 0) * SC;
             wallEls.push(<g key={`w-${wi.id}`}>
-              <Box3D cx={wi.x} cy={WTOP} w={c.width} h={ch} depth={d} front="#fff" top="#eee" side="#ddd"/>
-              <Face cab={c} cx={wi.x} cy={WTOP} w={c.width} h={ch}/>
-              <text x={labelX} y={WTOP-5} textAnchor="middle" fontSize={9} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{wi.id}</text>
-              <text x={labelX} y={WTOP+labelYOff} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width}x{ch}x{d}</text>
+              <Box3D cx={wi.x} cy={wcy} w={c.width} h={ch} depth={d} front="#fff" top="#eee" side="#ddd"/>
+              <Face cab={c} cx={wi.x} cy={wcy} w={c.width} h={ch}/>
+              <text x={labelX} y={wcy-5} textAnchor="middle" fontSize={9} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{wi.id}</text>
+              <text x={labelX} y={wcy+labelYOff} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width}x{ch}x{d}</text>
             </g>);
           });
           return wallEls;
@@ -251,9 +253,13 @@ function Render({ spec }) {
 // ═══════════════════════════════════════════════════════════
 const EMPTY_SPEC = { base_layout: [], wall_layout: [], alignment: [], cabinets: [] };
 
-function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onBack }) {
+function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onRoomDelete, onBack }) {
   const { spec, dispatch, undo, redo, canUndo, canRedo } = useSpecState(EMPTY_SPEC);
   const [tab, setTab] = useState("render");
+  const [showPlanPanel, setShowPlanPanel] = useState(false);
+  const [showPhotoSidebar, setShowPhotoSidebar] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [pendingRoomDelete, setPendingRoomDelete] = useState(null); // { id, index }
   const [jsonInput, setJsonInput] = useState("");
   const [jsonError, setJsonError] = useState(null);
   const [mode, setMode] = useState("home"); // home | loaded
@@ -383,6 +389,22 @@ function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onBack
         e.preventDefault();
         if (e.metaKey || e.ctrlKey) dispatch({ type: "MOVE_CABINET", id: selectedId, direction: "right" });
         else dispatch({ type: "NUDGE_CABINET", id: selectedId, amount: e.shiftKey ? 0.5 : 1 });
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        const cabMap2 = {}; (spec.cabinets || []).forEach(c => { cabMap2[c.id] = c; });
+        if (cabMap2[selectedId]?.row === "wall") {
+          dispatch({ type: "NUDGE_VERTICAL", id: selectedId, amount: e.shiftKey ? -0.5 : -1 });
+        }
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        const cabMap2 = {}; (spec.cabinets || []).forEach(c => { cabMap2[c.id] = c; });
+        if (cabMap2[selectedId]?.row === "wall") {
+          dispatch({ type: "NUDGE_VERTICAL", id: selectedId, amount: e.shiftKey ? 0.5 : 1 });
+        }
         return;
       }
       if (e.key === "Escape") { setSelectedId(null); setSelectedGapItem(null); return; }
@@ -545,31 +567,80 @@ function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onBack
             {saveState === "saving" && <span style={{fontSize:10,color:"#888",fontFamily:"'JetBrains Mono',monospace"}}>Saving...</span>}
             {saveState === "saved" && <span style={{fontSize:10,color:"#22c55e",opacity:0.6,fontFamily:"'JetBrains Mono',monospace"}}>✓ Saved</span>}
             {saveState === "error" && <span style={{fontSize:10,color:"#e04040",fontFamily:"'JetBrains Mono',monospace"}}>Save failed</span>}
-            {rooms?.length > 1 && rooms.map((r, i) => (
-              <button key={r.id} onClick={() => onRoomChange?.(r.id)} style={{
-                padding:"2px 8px",borderRadius:3,fontSize:10,fontWeight:600,cursor:"pointer",
-                background:r.id===roomId?"#2a2a3a":"transparent",
-                border:`1px solid ${r.id===roomId?"#3a3a4a":"#222"}`,
-                color:r.id===roomId?"#eee":"#555",fontFamily:"'JetBrains Mono',monospace"
-              }}>R{i+1}</button>
+            {rooms?.length > 0 && rooms.map((r, i) => (
+              <div key={r.id} style={{position:"relative",display:"inline-flex",alignItems:"center"}}>
+                <button onClick={() => onRoomChange?.(r.id)}
+                  style={{
+                    padding:"2px 8px",borderRadius:rooms.length>1?"3px 0 0 3px":"3px",fontSize:10,fontWeight:600,cursor:"pointer",
+                    background:r.id===roomId?"#2a2a3a":"transparent",
+                    border:`1px solid ${r.id===roomId?"#3a3a4a":"#222"}`,
+                    borderRight:rooms.length>1?"none":undefined,
+                    color:r.id===roomId?"#eee":"#555",fontFamily:"'JetBrains Mono',monospace"
+                  }}
+                >R{i+1}</button>
+                {rooms.length > 1 && (
+                  <button
+                    onClick={(e)=>{e.stopPropagation();setPendingRoomDelete({id:r.id,index:i+1});}}
+                    style={{
+                      padding:"2px 4px",borderRadius:"0 3px 3px 0",fontSize:9,cursor:"pointer",
+                      background:r.id===roomId?"#2a2a3a":"transparent",
+                      border:`1px solid ${r.id===roomId?"#3a3a4a":"#222"}`,
+                      color:"#444",fontFamily:"'JetBrains Mono',monospace",
+                      lineHeight:1,display:"flex",alignItems:"center",
+                    }}
+                    onMouseEnter={e=>e.target.style.color="#e04040"}
+                    onMouseLeave={e=>e.target.style.color="#444"}
+                    title={`Delete Room ${i+1}`}
+                  >×</button>
+                )}
+              </div>
             ))}
           </div>
         ) : (
           <h1 style={{fontSize:16,fontWeight:700,margin:0,letterSpacing:"-0.02em",color:"#eee"}}>Cabinet Spec Tool</h1>
         )}
         {hasSpec && (
-          <div style={{display:"flex",gap:3}}>
-            {[
-              ["render","Render"],["plan","Plan"],["json","JSON"],
-              ...(photoPreview?[["photo","Photo"]]:[]),
-              ...(wireframePreview?[["wireframe","Wireframe"]]:[]),
-            ].map(([key,label])=>(
-              <button key={key} onClick={()=>setTab(key)} style={{
+          <div style={{display:"flex",gap:3,alignItems:"center"}}>
+            {[["render","Render"],["plan","Plan"]].map(([key,label])=>(
+              <button key={key} onClick={()=>{setTab(key);setShowMoreMenu(false);}} style={{
                 background:tab===key?"#1a1a2a":"transparent",color:tab===key?"#fff":"#555",
                 border:`1px solid ${tab===key?"#2a2a3a":"transparent"}`,
                 padding:"4px 10px",borderRadius:5,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"
               }}>{label}</button>
             ))}
+            {/* Photo toggle — only on render tab */}
+            {tab === "render" && photoPreview && (
+              <button onClick={()=>setShowPhotoSidebar(!showPhotoSidebar)} style={{
+                background:showPhotoSidebar?"#1a1a2a":"transparent",color:showPhotoSidebar?"#fff":"#555",
+                border:`1px solid ${showPhotoSidebar?"#2a2a3a":"transparent"}`,
+                padding:"4px 10px",borderRadius:5,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"
+              }}>Photo</button>
+            )}
+            {/* More menu */}
+            <div style={{position:"relative"}}>
+              <button onClick={()=>setShowMoreMenu(!showMoreMenu)} style={{
+                background:showMoreMenu||(tab!=="render"&&tab!=="plan")?"#1a1a2a":"transparent",
+                color:showMoreMenu||(tab!=="render"&&tab!=="plan")?"#fff":"#555",
+                border:`1px solid ${showMoreMenu?"#2a2a3a":"transparent"}`,
+                padding:"4px 8px",borderRadius:5,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",letterSpacing:1,
+              }}>···</button>
+              {showMoreMenu && (
+                <div style={{position:"absolute",top:"100%",left:0,marginTop:4,background:"#14141e",border:"1px solid #2a2a3a",borderRadius:6,boxShadow:"0 4px 16px rgba(0,0,0,0.5)",zIndex:20,minWidth:120,overflow:"hidden"}}>
+                  {[
+                    ["json","JSON"],
+                    ...(photoPreview?[["photo","Photo"]]:[]),
+                    ...(wireframePreview?[["wireframe","Wireframe"]]:[]),
+                  ].map(([key,label])=>(
+                    <div key={key} onClick={()=>{setTab(key);setShowMoreMenu(false);}}
+                      style={{padding:"8px 14px",fontSize:12,color:tab===key?"#fff":"#aaa",cursor:"pointer",background:tab===key?"#1a1a2a":"transparent"}}
+                      onMouseEnter={e=>e.target.style.background="#1a1a2a"}
+                      onMouseLeave={e=>{if(tab!==key)e.target.style.background="transparent";}}>
+                      {label}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -774,25 +845,27 @@ function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onBack
                 <button onClick={undo} disabled={!canUndo} style={{background:canUndo?"#1a1a2a":"transparent",border:"1px solid #2a2a3a",color:canUndo?"#e0e0e0":"#333",padding:"4px 10px",borderRadius:4,fontSize:11,cursor:canUndo?"pointer":"default",fontWeight:600}}>Undo</button>
                 <button onClick={redo} disabled={!canRedo} style={{background:canRedo?"#1a1a2a":"transparent",border:"1px solid #2a2a3a",color:canRedo?"#e0e0e0":"#333",padding:"4px 10px",borderRadius:4,fontSize:11,cursor:canRedo?"pointer":"default",fontWeight:600}}>Redo</button>
                 <span style={{flex:1}}/>
-                <span style={{color:"#555",fontWeight:600}}>{cabCount} cabs</span>
-                <span style={{color:"#333"}}>|</span>
+                <span style={{color:"#555"}}>{cabCount} cabs</span>
+                <span style={{color:"#222"}}>|</span>
                 <span style={{color:"#D94420",fontWeight:600}}>B:{baseRun}"</span>
-                <span style={{color:"#333"}}>|</span>
                 <span style={{color:"#1a6fbf",fontWeight:600}}>W:{wallRun}"</span>
-                <span style={{color:"#333"}}>|</span>
-                <span style={{color:"#555",fontSize:10}}>wall</span>
+                <span style={{color:"#222"}}>|</span>
+                {/* Wall measurement — the key number */}
+                <span style={{color:"#666",fontSize:10}}>wall</span>
                 <input type="number" defaultValue={wallLength||""} placeholder="—"
                   onBlur={e=>{const v=parseFloat(e.target.value);setWallLength(isNaN(v)||v<=0?null:v);}}
                   onKeyDown={e=>{if(e.key==="Enter")e.target.blur();}}
-                  style={{width:42,height:22,background:"#0a0a14",border:"1px solid #2a2a3a",borderRadius:3,color:"#ccc",textAlign:"center",fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}
+                  style={{width:42,height:24,background:"#0a0a14",border:"1px solid #2a2a3a",borderRadius:4,color:"#ccc",textAlign:"center",fontSize:12,fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}
                 />
-                {wallLength && (()=>{const maxRun=Math.max(baseRun,wallRun);const filler=wallLength-maxRun;return <span style={{color:filler<0?"#e04040":filler>6?"#e0a020":"#22c55e",fontWeight:600,fontSize:10}}>{filler>=0?`+${filler}" filler`:`${filler}" over!`}</span>;})()}
-                <span style={{color:"#333"}}>|</span>
-                <button onClick={()=>window.print()} style={{height:22,padding:"0 8px",borderRadius:3,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#888",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Print</button>
+                {wallLength && (()=>{const maxRun=Math.max(baseRun,wallRun);const filler=wallLength-maxRun;return <span style={{color:filler<0?"#e04040":filler>6?"#e0a020":"#22c55e",fontWeight:700,fontSize:11,padding:"2px 6px",background:filler<0?"rgba(224,64,64,0.1)":"rgba(34,197,94,0.1)",borderRadius:3}}>{filler>=0?`+${filler}" filler`:`${filler}" over!`}</span>;})()}
+                <span style={{color:"#222"}}>|</span>
+                <button onClick={()=>window.print()} style={{height:24,padding:"0 10px",borderRadius:4,background:"#1a1a2a",border:"1px solid #2a2a3a",color:"#888",fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"'DM Sans',sans-serif"}}>Print</button>
               </div>
 
+              {/* Render + optional Photo sidebar */}
+              <div style={{display:"flex",flex:"1 1 auto",overflow:"hidden"}}>
               {/* Interactive 3D Render */}
-              <div data-printable style={{flex:"1 1 auto",overflow:"auto",background:"#fff",position:"relative"}} onClick={()=>setRenderCtxMenu(null)}>
+              <div data-printable style={{flex:"1 1 auto",overflow:"auto",background:"#fff",position:"relative"}} onClick={()=>{setRenderCtxMenu(null);setShowMoreMenu(false);}}>
                 {/* Print-only header — hidden on screen, visible when printing */}
                 <div data-printonly style={{display:"none",padding:"12px 16px 8px",borderBottom:"2px solid #333",marginBottom:8}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
@@ -803,16 +876,7 @@ function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onBack
                     {cabCount} cabinets · Base: {baseRun}" · Wall: {wallRun}"
                   </div>
                 </div>
-                {/* Photo reference overlay */}
-                {photoPreview && (
-                  <div onClick={(e)=>e.stopPropagation()} style={{position:"absolute",top:8,right:8,zIndex:5,cursor:"pointer"}}
-                    title="Click to toggle photo reference">
-                    <img src={photoPreview} alt="Reference"
-                      onClick={(e)=>{e.stopPropagation();const el=e.target;el.style.maxWidth=el.style.maxWidth==="300px"?"120px":"300px";}}
-                      style={{maxWidth:"120px",borderRadius:6,border:"2px solid #333",boxShadow:"0 2px 8px rgba(0,0,0,0.5)",opacity:0.85,transition:"max-width 0.2s"}}
-                    />
-                  </div>
-                )}
+                {/* No overlapping thumbnails — photo is in sidebar, plan is a tab */}
                 <InteractiveRender spec={spec} selectedId={selectedId} onSelect={(id)=>{handleSelect(id);setRenderCtxMenu(null);}}
                   onDoubleClick={(id)=>{setSelectedId(id);setTimeout(()=>{if(widthInputRef.current){widthInputRef.current.focus();widthInputRef.current.select();}},50);}}
                   onContextMenu={(ctx)=>setRenderCtxMenu(ctx)}
@@ -826,6 +890,7 @@ function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onBack
                     setSelectedGapItem({...item, entry:item, rowName, idx, w:item.width||0});
                   }}
                   onNudge={(id,amount)=>dispatch({type:"NUDGE_CABINET",id,amount})}
+                  onNudgeVertical={(id,amount)=>dispatch({type:"NUDGE_VERTICAL",id,amount})}
                 />
                 {/* Context menu */}
                 {renderCtxMenu && (()=>{
@@ -850,6 +915,28 @@ function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onBack
                 })()}
               </div>
 
+              {/* Photo reference sidebar */}
+              {showPhotoSidebar && photoPreview && (
+                <div style={{
+                  flex:"0 0 280px",background:"#08080e",borderLeft:"1px solid #1a1a2a",
+                  display:"flex",flexDirection:"column",overflow:"hidden",
+                }}>
+                  <div style={{display:"flex",alignItems:"center",padding:"8px 12px",borderBottom:"1px solid #1a1a2a",flexShrink:0}}>
+                    <span style={{fontSize:11,fontWeight:600,color:"#888"}}>Reference Photo</span>
+                    <span style={{flex:1}}/>
+                    <button onClick={()=>setShowPhotoSidebar(false)} style={{
+                      width:22,height:22,borderRadius:4,fontSize:14,
+                      background:"transparent",border:"1px solid #2a2a3a",
+                      color:"#555",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+                    }}>×</button>
+                  </div>
+                  <div style={{flex:1,overflow:"auto",padding:8}}>
+                    <img src={photoPreview} alt="Reference" style={{width:"100%",borderRadius:6,display:"block"}}/>
+                  </div>
+                </div>
+              )}
+              </div>{/* end split wrapper */}
+
               {/* Bottom bar — cabinet selected */}
               {sel && !selectedGapItem && (
                 <CabinetEditBar
@@ -863,6 +950,8 @@ function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onBack
                   onSelectId={setSelectedId}
                   onMoveLeft={() => dispatch({ type: "NUDGE_CABINET", id: sel.id, amount: -3 })}
                   onMoveRight={() => dispatch({ type: "NUDGE_CABINET", id: sel.id, amount: 3 })}
+                  onMoveUp={sel.row === "wall" ? () => dispatch({ type: "NUDGE_VERTICAL", id: sel.id, amount: -3 }) : undefined}
+                  onMoveDown={sel.row === "wall" ? () => dispatch({ type: "NUDGE_VERTICAL", id: sel.id, amount: 3 }) : undefined}
                   onDelete={() => setPendingDelete(sel.id)}
                   onAddGap={() => {
                     const layout=spec[sel.row==="base"?"base_layout":"wall_layout"]||[];
@@ -1039,11 +1128,7 @@ function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onBack
         })()}
 
         {hasSpec && tab === "json" && (
-          <pre style={{background:"#0a0a14",border:"1px solid #1a1a2a",borderRadius:10,
-            padding:14,fontSize:10.5,lineHeight:1.5,color:"#888",
-            fontFamily:"'JetBrains Mono',monospace",overflow:"auto",maxHeight:"calc(100vh - 140px)"}}>
-            {JSON.stringify(spec,null,2)}
-          </pre>
+          <JsonEditor spec={spec} dispatch={dispatch} />
         )}
 
         {hasSpec && tab === "photo" && photoPreview && (
@@ -1073,6 +1158,29 @@ function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onBack
                 Cancel
               </button>
               <button onClick={() => { dispatch({type:"DELETE_CABINET",id:pendingDelete}); setSelectedId(null); setPendingDelete(null); }}
+                style={{padding:"10px 24px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",
+                  background:"#e04040",color:"#fff",border:"none",fontFamily:"inherit"}}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Room Delete Modal */}
+      {pendingRoomDelete && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999}}
+          onClick={(e) => { if(e.target === e.currentTarget) setPendingRoomDelete(null); }}>
+          <div style={{background:"#1a1a2a",border:"1px solid #333",borderRadius:12,padding:"28px 32px",maxWidth:360,width:"90%",textAlign:"center"}}>
+            <div style={{fontSize:15,fontWeight:700,color:"#eee",marginBottom:8}}>Delete Room {pendingRoomDelete.index}?</div>
+            <div style={{fontSize:13,color:"#888",marginBottom:20}}>All cabinets and images in this room will be permanently removed.</div>
+            <div style={{display:"flex",gap:10,justifyContent:"center"}}>
+              <button onClick={() => setPendingRoomDelete(null)}
+                style={{padding:"10px 24px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",
+                  background:"transparent",color:"#888",border:"1px solid #333",fontFamily:"inherit"}}>
+                Cancel
+              </button>
+              <button onClick={() => { onRoomDelete?.(pendingRoomDelete.id); setPendingRoomDelete(null); }}
                 style={{padding:"10px 24px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",
                   background:"#e04040",color:"#fff",border:"none",fontFamily:"inherit"}}>
                 Delete
@@ -1122,6 +1230,18 @@ function ProjectEditorWrapper() {
     return <div style={{minHeight:"100vh",background:"#06060c",color:"#555",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}}>Loading...</div>;
   }
 
+  const handleRoomDelete = async (roomId) => {
+    try {
+      await api.deleteRoom(roomId);
+      const remaining = project.rooms.filter(r => r.id !== roomId);
+      setProject(prev => ({ ...prev, rooms: remaining }));
+      if (activeRoomId === roomId && remaining.length > 0) {
+        const best = remaining.find(r => r.spec_json || r.photo_id || r.wireframe_id) || remaining[0];
+        setActiveRoomId(best.id);
+      }
+    } catch (e) { console.error("Failed to delete room:", e); }
+  };
+
   return (
     <EditorApp
       key={activeRoomId}
@@ -1130,6 +1250,7 @@ function ProjectEditorWrapper() {
       projectName={project.name}
       rooms={project.rooms}
       onRoomChange={setActiveRoomId}
+      onRoomDelete={handleRoomDelete}
       onBack={() => navigate("/")}
     />
   );
@@ -1143,7 +1264,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={
-        <div style={{minHeight:"100vh",background:"#06060c",color:"#ddd",fontFamily:"'DM Sans',-apple-system,sans-serif"}}>
+        <div style={{minHeight:"100vh",background:"#07070f",color:"#ddd",fontFamily:"'DM Sans',-apple-system,sans-serif"}}>
           <style>{`
             @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
             *{box-sizing:border-box}
@@ -1151,10 +1272,31 @@ export default function App() {
             ::-webkit-scrollbar-track{background:transparent}
             ::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.08);border-radius:3px}
           `}</style>
-          <div style={{padding:"16px 20px 12px",borderBottom:"1px solid #1a1a2a"}}>
-            <h1 style={{fontSize:16,fontWeight:700,margin:0,letterSpacing:"-0.02em",color:"#eee"}}>Cabinet Spec Tool</h1>
+          <div style={{
+            padding:"0",
+            borderBottom:"1px solid rgba(255,255,255,0.06)",
+            background:"linear-gradient(180deg, #0d0d1a 0%, #07070f 100%)",
+          }}>
+            <div style={{maxWidth:1200,margin:"0 auto",padding:"18px 32px",display:"flex",alignItems:"center",gap:14}}>
+              <div style={{
+                width:36,height:36,borderRadius:10,
+                background:"linear-gradient(135deg, #ef5a30 0%, #D94420 100%)",
+                display:"flex",alignItems:"center",justifyContent:"center",
+                boxShadow:"0 4px 16px rgba(217,68,32,0.35), 0 0 0 1px rgba(217,68,32,0.2)",
+              }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                  <rect x="2" y="4" width="20" height="16" rx="2" stroke="#fff" strokeWidth="1.8"/>
+                  <line x1="2" y1="12" x2="22" y2="12" stroke="#fff" strokeWidth="1.2"/>
+                  <line x1="9" y1="12" x2="9" y2="20" stroke="#fff" strokeWidth="1.2"/>
+                  <line x1="15" y1="12" x2="15" y2="20" stroke="#fff" strokeWidth="1.2"/>
+                </svg>
+              </div>
+              <h1 style={{fontSize:20,fontWeight:700,margin:0,letterSpacing:"-0.03em",color:"#fff"}}>
+                Cabinet Spec Tool
+              </h1>
+            </div>
           </div>
-          <div style={{padding:"0 0 20px"}}><ProjectList /></div>
+          <div style={{padding:"0 0 40px"}}><ProjectList /></div>
         </div>
       } />
       <Route path="/project/:projectId" element={<ProjectEditorWrapper />} />

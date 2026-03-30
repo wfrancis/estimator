@@ -6,8 +6,8 @@ const SCALE = 3; // 3px per inch
 const MINOR = 1; // minor grid = 1 inch
 const MAJOR = 6; // major grid = 6 inches
 const MINOR3 = 3; // 3" ticks
-const BLOCK_H_BASE = 60;
-const BLOCK_H_WALL = 50;
+const BLOCK_H_BASE = 72;
+const BLOCK_H_WALL = 62;
 const HANDLE_W = 6;
 
 const COLORS = {
@@ -218,12 +218,12 @@ export default function GridEditor({ spec, selectedId, onSelect, dispatch, width
   // SVG dimensions
   const contentW = Math.max(baseRow.totalW, wallRow.totalW, 300);
   const svgW = contentW + 160;
-  const svgH = BLOCK_H_WALL + BLOCK_H_BASE + 100;
+  const svgH = BLOCK_H_WALL + BLOCK_H_BASE + 140;
 
   // Row Y positions
   const rulerH = 20;
-  const wallY = rulerH + 16;
-  const baseY = wallY + BLOCK_H_WALL + 40;
+  const wallY = rulerH + 20;
+  const baseY = wallY + BLOCK_H_WALL + 50;
 
   // ── Flash effect when width changes ──────────────────────
   const prevWidthRef = useRef({});
@@ -280,6 +280,24 @@ export default function GridEditor({ spec, selectedId, onSelect, dispatch, width
           } else {
             const step = e.shiftKey ? 0.5 : 1;
             dispatch({ type: "NUDGE_CABINET", id: selectedId, amount: step });
+          }
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          const sel2 = cabMap[selectedId];
+          if (sel2?.row === "wall") {
+            const step = e.shiftKey ? 0.5 : 1;
+            dispatch({ type: "NUDGE_VERTICAL", id: selectedId, amount: -step });
+          }
+          return;
+        }
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          const sel2 = cabMap[selectedId];
+          if (sel2?.row === "wall") {
+            const step = e.shiftKey ? 0.5 : 1;
+            dispatch({ type: "NUDGE_VERTICAL", id: selectedId, amount: step });
           }
           return;
         }
@@ -688,21 +706,27 @@ export default function GridEditor({ spec, selectedId, onSelect, dispatch, width
           </text>
 
           {/* Face summary — e.g. "Dr+2D" for drawer + 2 doors */}
-          {item.cab?.face?.sections?.length > 0 && displayBw > 30 && (
-            <text x={bx + displayBw / 2} y={rowY + blockH / 2 + 22}
-              fill={isWall ? "rgba(26,111,191,0.5)" : "rgba(217,68,32,0.5)"} fontSize={7} textAnchor="middle"
-              fontFamily="'JetBrains Mono',monospace"
-              style={{ pointerEvents: "none" }}>
-              {item.cab.face.sections.map(s => {
-                const c = s.count > 1 ? s.count : "";
-                if (s.type === "drawer") return c + "Dr";
-                if (s.type === "door") return c + "D";
-                if (s.type === "false_front") return "FF";
-                if (s.type === "glass_door") return c + "G";
-                return s.type.substring(0, 2);
-              }).join("+")}
-            </text>
-          )}
+          {item.cab?.face?.sections?.length > 0 && displayBw > 28 && (() => {
+            const summary = item.cab.face.sections.map(s => {
+              const c = s.count > 1 ? s.count : "";
+              if (s.type === "drawer") return c + "Dr";
+              if (s.type === "door") return c + "D";
+              if (s.type === "false_front") return "FF";
+              if (s.type === "glass_door") return c + "G";
+              return s.type.substring(0, 2);
+            }).join("+");
+            // Truncate if too long for cabinet width
+            const maxChars = Math.floor(displayBw / 5);
+            const display = summary.length > maxChars ? summary.slice(0, maxChars - 1) + "\u2026" : summary;
+            return (
+              <text x={bx + displayBw / 2} y={rowY + blockH / 2 + 24}
+                fill={isWall ? "rgba(26,111,191,0.5)" : "rgba(217,68,32,0.5)"} fontSize={8} textAnchor="middle"
+                fontFamily="'JetBrains Mono',monospace"
+                style={{ pointerEvents: "none" }}>
+                {display}
+              </text>
+            );
+          })()}
 
           {/* Resize handle (only on selected) */}
           {isSelected && (
@@ -762,13 +786,16 @@ export default function GridEditor({ spec, selectedId, onSelect, dispatch, width
 
   return (
     <div style={{ background: COLORS.bg, overflow: "auto", position: "relative", height: "100%" }} onWheel={onWheel}>
-      {/* Total width badges */}
+      {/* Total width badges — positioned below ruler to avoid overlap */}
       <div style={{
-        position: "absolute", top: 6, right: 12, display: "flex", gap: 10, zIndex: 2,
-        fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 600
+        position: "absolute", top: 4, right: 12, display: "flex", gap: 8, zIndex: 2,
+        fontFamily: "'JetBrains Mono',monospace", fontSize: 10, fontWeight: 600,
+        background: "rgba(10,10,20,0.85)", padding: "2px 8px", borderRadius: 4,
+        border: "1px solid #1a1a2a",
       }}>
-        <span style={{ color: COLORS.wall }}>Wall: {wallTotalIn}"</span>
-        <span style={{ color: COLORS.base }}>Base: {baseTotalIn}"</span>
+        <span style={{ color: COLORS.wall }}>W:{wallTotalIn}"</span>
+        <span style={{ color: "#333" }}>|</span>
+        <span style={{ color: COLORS.base }}>B:{baseTotalIn}"</span>
       </div>
 
       {/* Zoom controls */}

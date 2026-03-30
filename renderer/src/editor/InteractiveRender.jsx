@@ -54,7 +54,7 @@ function Face({ cab, cx, cy, w, h }) {
   return <>{els}</>;
 }
 
-export default function InteractiveRender({ spec, selectedId, onSelect, onDoubleClick, onContextMenu: onCtxMenu, onGapSelect, onNudge }) {
+export default function InteractiveRender({ spec, selectedId, onSelect, onDoubleClick, onContextMenu: onCtxMenu, onGapSelect, onNudge, onNudgeVertical }) {
   if (!spec?.cabinets?.length) return <div style={{ color: "#555", padding: 20, textAlign: "center" }}>No cabinets loaded</div>;
 
   const cabMap = {}; spec.cabinets.forEach(c => { cabMap[c.id] = c; });
@@ -113,41 +113,54 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
     if (onGapSelect) onGapSelect(item);
   }, [onGapSelect]);
 
-  // ── Drag-to-move state ──
-  const [drag, setDrag] = useState(null); // { id, startClientX, dx }
+  // ── Drag-to-move state (2D: horizontal + vertical) ──
+  const [drag, setDrag] = useState(null); // { id, startClientX, startClientY, dx, dy, row }
   const svgRef = useRef(null);
   const dragThreshold = 4; // px before drag starts
 
-  const onPointerDown = useCallback((id) => (e) => {
+  const onPointerDown = useCallback((id, row) => (e) => {
     if (e.button !== 0) return; // left click only
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     onSelect(id);
-    setDrag({ id, startClientX: e.clientX, dx: 0, started: false });
+    setDrag({ id, row, startClientX: e.clientX, startClientY: e.clientY, dx: 0, dy: 0, started: false });
   }, [onSelect]);
 
   const onPointerMove = useCallback((e) => {
     if (!drag) return;
     const rawDx = e.clientX - drag.startClientX;
-    if (!drag.started && Math.abs(rawDx) < dragThreshold) return;
-    // Snap dx to nearest inch in SVG coords — need to account for SVG scale
+    const rawDy = e.clientY - drag.startClientY;
+    if (!drag.started && Math.abs(rawDx) < dragThreshold && Math.abs(rawDy) < dragThreshold) return;
     const svg = svgRef.current;
     if (!svg) return;
     const rect = svg.getBoundingClientRect();
     const svgScale = rect.width / svg.viewBox.baseVal.width;
-    const dxSvg = rawDx / svgScale; // px → SVG units
-    const snapInch = Math.round(dxSvg / SC); // SVG units → inches, snapped
-    const snappedDx = snapInch * SC * svgScale; // back to screen px
-    setDrag(d => ({ ...d, dx: snappedDx, dxInches: snapInch, started: true }));
+    // Horizontal snap
+    const dxSvg = rawDx / svgScale;
+    const snapInchX = Math.round(dxSvg / SC);
+    const snappedDx = snapInchX * SC * svgScale;
+    // Vertical snap (wall cabinets only)
+    let snappedDy = 0, snapInchY = 0;
+    if (drag.row === "wall") {
+      const dySvg = rawDy / svgScale;
+      snapInchY = Math.round(dySvg / SC);
+      snappedDy = snapInchY * SC * svgScale;
+    }
+    setDrag(d => ({ ...d, dx: snappedDx, dy: snappedDy, dxInches: snapInchX, dyInches: snapInchY, started: true }));
   }, [drag]);
 
   const onPointerUp = useCallback((e) => {
     if (!drag) return;
-    if (drag.started && drag.dxInches && drag.dxInches !== 0 && onNudge) {
-      onNudge(drag.id, drag.dxInches);
+    if (drag.started) {
+      if (drag.dxInches && drag.dxInches !== 0 && onNudge) {
+        onNudge(drag.id, drag.dxInches);
+      }
+      if (drag.dyInches && drag.dyInches !== 0 && onNudgeVertical && drag.row === "wall") {
+        onNudgeVertical(drag.id, drag.dyInches);
+      }
     }
     setDrag(null);
-  }, [drag, onNudge]);
+  }, [drag, onNudge, onNudgeVertical]);
 
   const highlightRect = (x, cy, w, h, row) => {
     const color = row === "base" ? "#D94420" : "#1a6fbf";
@@ -172,7 +185,7 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
           const isSelected = selectedId === bi.id;
           const isDragging = drag?.started && drag.id === bi.id;
           const dragTx = isDragging ? `translate(${drag.dx / (svgRef.current ? svgRef.current.getBoundingClientRect().width / svgW : 1)}, 0)` : undefined;
-          return (<g key={`b-${bi.id}`} onClick={!drag?.started ? handleClick(bi.id) : undefined} onDoubleClick={handleDblClick(bi.id)} onContextMenu={handleContextMenu(bi.id, "base")} onPointerDown={onPointerDown(bi.id)} style={{ cursor: isDragging ? "grabbing" : "grab" }} transform={dragTx}>
+          return (<g key={`b-${bi.id}`} onClick={!drag?.started ? handleClick(bi.id) : undefined} onDoubleClick={handleDblClick(bi.id)} onContextMenu={handleContextMenu(bi.id, "base")} onPointerDown={onPointerDown(bi.id, "base")} style={{ cursor: isDragging ? "grabbing" : "grab" }} transform={dragTx}>
             <rect x={bi.x} y={cy - 4} width={c.width * SC} height={ch * SC + 8 + TOE + 30} fill="transparent" />
             {isSelected && highlightRect(bi.x, cy, c.width, ch, "base")}
             <Box3D cx={bi.x} cy={cy} w={c.width} h={ch} depth={d} />
@@ -200,21 +213,23 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
 
         <Box3D cx={PAD} cy={CTTOP} w={ctW} h={1.5} depth={25.5} front="none" top="none" side="none" stroke="#444" sw={1.3} />
 
-        {/* Wall cabinets first — bottom-aligned (all bottoms at WBOT) */}
+        {/* Wall cabinets first — top-aligned (all tops at WTOP) */}
         {wallItems.filter(wi => wi.cab).map(wi => {
           const c = wi.cab, ch = c.height || 30, d = c.depth || 12;
-          const wcy = WBOT - ch * SC; // bottom-align: shorter cabs start lower
+          const wcy = WTOP + (c.yOffset || 0) * SC; // top-align with vertical offset
           const isSelected = selectedId === wi.id;
           const isDragging = drag?.started && drag.id === wi.id;
-          const dragTx = isDragging ? `translate(${drag.dx / (svgRef.current ? svgRef.current.getBoundingClientRect().width / svgW : 1)}, 0)` : undefined;
-          return (<g key={`w-${wi.id}`} onClick={!drag?.started ? handleClick(wi.id) : undefined} onDoubleClick={handleDblClick(wi.id)} onContextMenu={handleContextMenu(wi.id, "wall")} onPointerDown={onPointerDown(wi.id)} style={{ cursor: isDragging ? "grabbing" : "grab" }} transform={dragTx}>
+          const svgScale = svgRef.current ? svgRef.current.getBoundingClientRect().width / svgW : 1;
+          const dragTx = isDragging ? `translate(${drag.dx / svgScale}, ${drag.dy / svgScale})` : undefined;
+          const midX = wi.x + c.width * SC / 2;
+          return (<g key={`w-${wi.id}`} onClick={!drag?.started ? handleClick(wi.id) : undefined} onDoubleClick={handleDblClick(wi.id)} onContextMenu={handleContextMenu(wi.id, "wall")} onPointerDown={onPointerDown(wi.id, "wall")} style={{ cursor: isDragging ? "grabbing" : "grab" }} transform={dragTx}>
             <rect x={wi.x} y={wcy - 20} width={c.width * SC} height={ch * SC + 28} fill="transparent" />
             {isSelected && highlightRect(wi.x, wcy, c.width, ch, "wall")}
             <Box3D cx={wi.x} cy={wcy} w={c.width} h={ch} depth={d} front="#fff" top="#eee" side="#ddd" />
             <Face cab={c} cx={wi.x} cy={wcy} w={c.width} h={ch} />
-            <text x={wi.x + c.width * SC / 2} y={wcy - 5} textAnchor="middle" fontSize={9} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{wi.id}</text>
-            <text x={wi.x + c.width * SC / 2} y={wcy - 15} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width < 21 ? `${c.width}w` : `${c.width}x${ch}x${d}`}</text>
-            {isDragging && <text x={wi.x + c.width * SC / 2} y={wcy - 22} textAnchor="middle" fontSize={10} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{drag.dxInches > 0 ? "+" : ""}{drag.dxInches}"</text>}
+            <text x={midX} y={wcy - 5} textAnchor="middle" fontSize={9} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{wi.id}</text>
+            <text x={midX} y={wcy - 15} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width < 21 ? `${c.width}w` : `${c.width}x${ch}x${d}`}</text>
+            {isDragging && (drag.dxInches !== 0 || drag.dyInches !== 0) && <text x={midX} y={wcy - 22} textAnchor="middle" fontSize={10} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{drag.dxInches !== 0 ? `${drag.dxInches > 0 ? "+" : ""}${drag.dxInches}"` : ""}{drag.dxInches !== 0 && drag.dyInches !== 0 ? " " : ""}{drag.dyInches !== 0 ? `${drag.dyInches > 0 ? "↓" : "↑"}${Math.abs(drag.dyInches)}"` : ""}</text>}
           </g>);
         })}
 

@@ -74,6 +74,60 @@ export default function specReducer(state, action) {
       return spec;
     }
 
+    case "MOVE_ROW": {
+      // Move a cabinet between base and wall rows
+      // action: { id, targetRow } — "base" or "wall"
+      const currentRow = rowForCabinet(spec, action.id);
+      if (!currentRow || currentRow === action.targetRow) return spec;
+
+      const fromKey = getLayoutKey(currentRow);
+      const toKey = getLayoutKey(action.targetRow);
+      const fromLayout = spec[fromKey];
+      const idx = findRefIndex(fromLayout, action.id);
+      if (idx === -1) return spec;
+
+      // Remove from source layout
+      fromLayout.splice(idx, 1);
+
+      // Add to end of target layout
+      spec[toKey].push({ ref: action.id });
+
+      // Update cabinet's row property
+      const cabIdx = findCabinetIndex(spec, action.id);
+      if (cabIdx !== -1) {
+        spec.cabinets[cabIdx].row = action.targetRow;
+        // Adjust default dimensions for new row
+        if (action.targetRow === "wall") {
+          if (spec.cabinets[cabIdx].height === 34.5) spec.cabinets[cabIdx].height = 30;
+          if (spec.cabinets[cabIdx].depth === 24) spec.cabinets[cabIdx].depth = 12;
+        } else {
+          if (spec.cabinets[cabIdx].height === 30) spec.cabinets[cabIdx].height = 34.5;
+          if (spec.cabinets[cabIdx].depth === 12) spec.cabinets[cabIdx].depth = 24;
+        }
+        // Update ID prefix — ensure uniqueness
+        const oldId = spec.cabinets[cabIdx].id;
+        const prefix = action.targetRow === "wall" ? "W" : "B";
+        const num = oldId.replace(/^[BW]/, "");
+        let newId = prefix + num;
+        // If ID already taken, find next available number
+        const existingIds = new Set(spec.cabinets.map(c => c.id));
+        if (existingIds.has(newId)) {
+          let n = 1;
+          while (existingIds.has(prefix + n)) n++;
+          newId = prefix + n;
+        }
+        spec.cabinets[cabIdx].id = newId;
+        // Update layout ref
+        const toLayout = spec[toKey];
+        const newIdx = toLayout.findIndex(i => i.ref === oldId);
+        if (newIdx !== -1) toLayout[newIdx].ref = newId;
+        // Update alignment refs
+        spec.alignment = (spec.alignment || []).filter(a => a.wall !== oldId && a.base !== oldId);
+        return { ...spec, _movedTo: newId };
+      }
+      return spec;
+    }
+
     case "NUDGE_CABINET": {
       // Move a cabinet left/right by inserting/resizing a filler gap before it.
       // Compensates the spacer AFTER so downstream cabinets stay in place.
@@ -131,6 +185,18 @@ export default function specReducer(state, action) {
           }
         }
       }
+      return spec;
+    }
+
+    case "NUDGE_VERTICAL": {
+      // Move a wall cabinet up/down by adjusting its yOffset (inches from top).
+      // action: { id, amount } — positive = down, negative = up
+      const cabIdx = findCabinetIndex(spec, action.id);
+      if (cabIdx === -1) return spec;
+      const cab = spec.cabinets[cabIdx];
+      if (cab.row !== "wall") return spec; // only wall cabinets can be nudged vertically
+      const cur = cab.yOffset || 0;
+      cab.yOffset = Math.max(0, cur + (action.amount || 0));
       return spec;
     }
 
