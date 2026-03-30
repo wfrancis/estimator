@@ -395,7 +395,10 @@ function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onBack
           const next = e.shiftKey
             ? allItems[(idx - 1 + allItems.length) % allItems.length]
             : allItems[(idx + 1) % allItems.length];
-          if (next) setSelectedId(next.ref);
+          if (next) {
+            setSelectedId(next.ref);
+            setTimeout(() => { if (widthInputRef.current) { widthInputRef.current.focus(); widthInputRef.current.select(); } }, 50);
+          }
         }
         return;
       }
