@@ -1205,9 +1205,11 @@ function ProjectEditorWrapper() {
   const [activeRoomId, setActiveRoomId] = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
       try {
         const p = await api.getProject(projectId);
+        if (cancelled) return;
         setProject(p);
         const roomParam = searchParams.get("room");
         if (roomParam && p.rooms?.some(r => r.id === roomParam)) {
@@ -1219,11 +1221,13 @@ function ProjectEditorWrapper() {
         } else {
           // Auto-create first room
           const r = await api.createRoom(projectId);
+          if (cancelled) return;
           setProject(prev => ({ ...prev, rooms: [r] }));
           setActiveRoomId(r.id);
         }
       } catch (e) { console.error("Failed to load project:", e); }
     })();
+    return () => { cancelled = true; };
   }, [projectId]);
 
   if (!project || !activeRoomId) {
