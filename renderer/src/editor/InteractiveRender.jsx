@@ -179,7 +179,7 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
             <rect x={bi.x + 2 * SC} y={FLOOR - TOE} width={Math.max(0, c.width * SC - 4 * SC)} height={TOE} fill="none" stroke="#ccc" strokeWidth={0.4} />
             <Face cab={c} cx={bi.x} cy={cy} w={c.width} h={ch} />
             <text x={bi.x + c.width * SC / 2} y={FLOOR + 13} textAnchor="middle" fontSize={9} fill="#D94420" fontWeight={700} fontFamily="monospace">{bi.id}</text>
-            <text x={bi.x + c.width * SC / 2} y={FLOOR + 23} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width}w {ch}h {d}d</text>
+            <text x={bi.x + c.width * SC / 2} y={FLOOR + 23} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width < 21 ? `${c.width}w` : `${c.width}w ${ch}h ${d}d`}</text>
             {isDragging && <text x={bi.x + c.width * SC / 2} y={cy - 8} textAnchor="middle" fontSize={10} fill="#D94420" fontWeight={700} fontFamily="monospace">{drag.dxInches > 0 ? "+" : ""}{drag.dxInches}"</text>}
           </g>);
         })}
@@ -212,7 +212,7 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
             <Box3D cx={wi.x} cy={WTOP} w={c.width} h={ch} depth={d} front="#fff" top="#eee" side="#ddd" />
             <Face cab={c} cx={wi.x} cy={WTOP} w={c.width} h={ch} />
             <text x={wi.x + c.width * SC / 2} y={WTOP - 5} textAnchor="middle" fontSize={9} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{wi.id}</text>
-            <text x={wi.x + c.width * SC / 2} y={WTOP - 15} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width}x{ch}x{d}</text>
+            <text x={wi.x + c.width * SC / 2} y={WTOP - 15} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width < 21 ? `${c.width}w` : `${c.width}x${ch}x${d}`}</text>
             {isDragging && <text x={wi.x + c.width * SC / 2} y={WTOP - 22} textAnchor="middle" fontSize={10} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{drag.dxInches > 0 ? "+" : ""}{drag.dxInches}"</text>}
           </g>);
         })}
