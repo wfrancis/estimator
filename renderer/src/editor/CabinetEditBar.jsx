@@ -118,14 +118,14 @@ export default function CabinetEditBar({ cab, spec, dispatch, selColor, widthInp
           onFocus={e => e.target.select()}
           onKeyDown={e => { if (e.key === "Enter") { commitDim("height", e.target.value); e.target.blur(); } }}
           onBlur={e => commitDim("height", e.target.value)}
-          style={inputStyle(48, selColor)}
+          style={{ ...inputStyle(48, selColor), border: `2px solid ${selColor}` }}
         />
         <span style={{ color: "#555", fontSize: 12, fontFamily: MONO }}>h</span>
         <input key={cab.id + "d"} type="number" defaultValue={cab.depth}
           onFocus={e => e.target.select()}
           onKeyDown={e => { if (e.key === "Enter") { commitDim("depth", e.target.value); e.target.blur(); } }}
           onBlur={e => commitDim("depth", e.target.value)}
-          style={inputStyle(48, selColor)}
+          style={{ ...inputStyle(48, selColor), border: `2px solid ${selColor}` }}
         />
         <span style={{ color: "#555", fontSize: 12, fontFamily: MONO }}>d</span>
 
