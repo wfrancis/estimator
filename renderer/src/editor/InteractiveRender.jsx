@@ -200,20 +200,21 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
 
         <Box3D cx={PAD} cy={CTTOP} w={ctW} h={1.5} depth={25.5} front="none" top="none" side="none" stroke="#444" sw={1.3} />
 
-        {/* Wall cabinets first */}
+        {/* Wall cabinets first — bottom-aligned (all bottoms at WBOT) */}
         {wallItems.filter(wi => wi.cab).map(wi => {
           const c = wi.cab, ch = c.height || 30, d = c.depth || 12;
+          const wcy = WBOT - ch * SC; // bottom-align: shorter cabs start lower
           const isSelected = selectedId === wi.id;
           const isDragging = drag?.started && drag.id === wi.id;
           const dragTx = isDragging ? `translate(${drag.dx / (svgRef.current ? svgRef.current.getBoundingClientRect().width / svgW : 1)}, 0)` : undefined;
           return (<g key={`w-${wi.id}`} onClick={!drag?.started ? handleClick(wi.id) : undefined} onDoubleClick={handleDblClick(wi.id)} onContextMenu={handleContextMenu(wi.id, "wall")} onPointerDown={onPointerDown(wi.id)} style={{ cursor: isDragging ? "grabbing" : "grab" }} transform={dragTx}>
-            <rect x={wi.x} y={WTOP - 20} width={c.width * SC} height={ch * SC + 28} fill="transparent" />
-            {isSelected && highlightRect(wi.x, WTOP, c.width, ch, "wall")}
-            <Box3D cx={wi.x} cy={WTOP} w={c.width} h={ch} depth={d} front="#fff" top="#eee" side="#ddd" />
-            <Face cab={c} cx={wi.x} cy={WTOP} w={c.width} h={ch} />
-            <text x={wi.x + c.width * SC / 2} y={WTOP - 5} textAnchor="middle" fontSize={9} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{wi.id}</text>
-            <text x={wi.x + c.width * SC / 2} y={WTOP - 15} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width < 21 ? `${c.width}w` : `${c.width}x${ch}x${d}`}</text>
-            {isDragging && <text x={wi.x + c.width * SC / 2} y={WTOP - 22} textAnchor="middle" fontSize={10} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{drag.dxInches > 0 ? "+" : ""}{drag.dxInches}"</text>}
+            <rect x={wi.x} y={wcy - 20} width={c.width * SC} height={ch * SC + 28} fill="transparent" />
+            {isSelected && highlightRect(wi.x, wcy, c.width, ch, "wall")}
+            <Box3D cx={wi.x} cy={wcy} w={c.width} h={ch} depth={d} front="#fff" top="#eee" side="#ddd" />
+            <Face cab={c} cx={wi.x} cy={wcy} w={c.width} h={ch} />
+            <text x={wi.x + c.width * SC / 2} y={wcy - 5} textAnchor="middle" fontSize={9} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{wi.id}</text>
+            <text x={wi.x + c.width * SC / 2} y={wcy - 15} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width < 21 ? `${c.width}w` : `${c.width}x${ch}x${d}`}</text>
+            {isDragging && <text x={wi.x + c.width * SC / 2} y={wcy - 22} textAnchor="middle" fontSize={10} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{drag.dxInches > 0 ? "+" : ""}{drag.dxInches}"</text>}
           </g>);
         })}
 
@@ -234,7 +235,11 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
 
         {wallItems.length > 0 && (() => {
           const mn = Math.min(...wallItems.map(p => p.x)), mx = Math.max(...wallItems.map(p => p.x + p.w * SC)), dd = dp(12);
-          return <g><line x1={mn} y1={WTOP} x2={mx} y2={WTOP} stroke="#444" strokeWidth={1} /><line x1={mx} y1={WTOP} x2={mx + dd.x} y2={WTOP + dd.y} stroke="#666" strokeWidth={0.5} /></g>;
+          return <g>
+            <line x1={mn} y1={WBOT} x2={mx} y2={WBOT} stroke="#bbb" strokeWidth={0.5} strokeDasharray="4,3" />
+            <line x1={mn} y1={WTOP} x2={mx} y2={WTOP} stroke="#444" strokeWidth={1} />
+            <line x1={mx} y1={WTOP} x2={mx + dd.x} y2={WTOP + dd.y} stroke="#666" strokeWidth={0.5} />
+          </g>;
         })()}
         <line x1={0} y1={FLOOR} x2={svgW} y2={FLOOR} stroke="#e0e0e0" strokeWidth={0.5} />
       </svg>
