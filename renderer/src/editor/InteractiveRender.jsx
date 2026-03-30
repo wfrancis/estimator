@@ -80,7 +80,11 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
   const WTOP = WBOT - maxWH;
   const ddMax = dp(24);
   const svgW = Math.max(bx, wx) + PAD + ddMax.x + 20;
-  const svgH = 530;
+
+  // Tight viewBox: crop unused vertical whitespace
+  const contentTop = wallItems.some(w => w.cab) ? WTOP - 28 : CTTOP - 12;
+  const contentBottom = FLOOR + 42;
+  const svgH = contentBottom - contentTop;
 
   const lastCabItem = (spec.base_layout || []).filter(i => i.ref).slice(-1)[0];
   const lastB = lastCabItem ? bMap[lastCabItem.ref] : null;
@@ -155,35 +159,21 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
   };
 
   return (
-    <div style={{ background: "#fff", borderRadius: 10, overflow: "auto", border: "1px solid rgba(26,26,46,0.12)", padding: 10 }}
+    <div style={{ background: "#fff", borderRadius: 10, border: "1px solid rgba(26,26,46,0.12)", padding: 10 }}
       onClick={() => onSelect(null)}>
-      <svg ref={svgRef} width={svgW} height={svgH} viewBox={`0 0 ${svgW} ${svgH}`}
+      <svg ref={svgRef} viewBox={`0 ${contentTop} ${svgW} ${svgH}`}
         onPointerMove={onPointerMove} onPointerUp={onPointerUp}
-        style={{ display: "block", maxWidth: "100%", minWidth: svgW, cursor: drag?.started ? "grabbing" : "pointer" }}>
+        style={{ display: "block", width: "100%", maxWidth: svgW * 2, height: "auto", cursor: drag?.started ? "grabbing" : "pointer" }}>
         <Box3D cx={PAD} cy={CTTOP} w={ctW} h={1.5} depth={25.5} front="none" top="none" side="none" stroke="#888" sw={0.8} />
 
-        {baseItems.map(bi => {
-          if (!bi.cab) {
-            const gapW = bi.w * SC, midX = bi.x + gapW / 2;
-            const label = (bi.item?.label || "").toUpperCase();
-            const dimY = FLOOR - TOE - 34.5 * SC / 2;
-            return (<g key={`a-${bi.id}`} onClick={handleGapClick(bi.item)} style={{ cursor: "pointer" }}>
-              {/* Bracket lines at edges */}
-              <line x1={bi.x + 1} y1={dimY - 6} x2={bi.x + 1} y2={dimY + 6} stroke="#bbb" strokeWidth={0.6} />
-              <line x1={bi.x + gapW - 1} y1={dimY - 6} x2={bi.x + gapW - 1} y2={dimY + 6} stroke="#bbb" strokeWidth={0.6} />
-              <line x1={bi.x + 1} y1={dimY} x2={bi.x + gapW - 1} y2={dimY} stroke="#bbb" strokeWidth={0.5} strokeDasharray="3,2" />
-              {/* Width */}
-              <text x={midX} y={dimY - 4} textAnchor="middle" fontSize={8} fill="#999" fontWeight={600} fontFamily="monospace">{bi.w}"</text>
-              {/* Label if named */}
-              {label && <text x={midX} y={dimY + 11} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{label}</text>}
-            </g>);
-          }
+        {/* Base cabinets first (below gaps in z-order) */}
+        {baseItems.filter(bi => bi.cab).map(bi => {
           const c = bi.cab, ch = c.height || 34.5, d = c.depth || 24, cy = FLOOR - TOE - ch * SC;
           const isSelected = selectedId === bi.id;
           const isDragging = drag?.started && drag.id === bi.id;
           const dragTx = isDragging ? `translate(${drag.dx / (svgRef.current ? svgRef.current.getBoundingClientRect().width / svgW : 1)}, 0)` : undefined;
           return (<g key={`b-${bi.id}`} onClick={!drag?.started ? handleClick(bi.id) : undefined} onDoubleClick={handleDblClick(bi.id)} onContextMenu={handleContextMenu(bi.id, "base")} onPointerDown={onPointerDown(bi.id)} style={{ cursor: isDragging ? "grabbing" : "grab" }} transform={dragTx}>
-            <rect x={bi.x - 4} y={cy - 4} width={c.width * SC + 8} height={ch * SC + 8 + TOE + 30} fill="transparent" />
+            <rect x={bi.x} y={cy - 4} width={c.width * SC} height={ch * SC + 8 + TOE + 30} fill="transparent" />
             {isSelected && highlightRect(bi.x, cy, c.width, ch, "base")}
             <Box3D cx={bi.x} cy={cy} w={c.width} h={ch} depth={d} />
             <rect x={bi.x + 2 * SC} y={FLOOR - TOE} width={Math.max(0, c.width * SC - 4 * SC)} height={TOE} fill="none" stroke="#ccc" strokeWidth={0.4} />
@@ -193,31 +183,31 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
             {isDragging && <text x={bi.x + c.width * SC / 2} y={cy - 8} textAnchor="middle" fontSize={10} fill="#D94420" fontWeight={700} fontFamily="monospace">{drag.dxInches > 0 ? "+" : ""}{drag.dxInches}"</text>}
           </g>);
         })}
+        {/* Base gaps on top (clickable) */}
+        {baseItems.filter(bi => !bi.cab).map(bi => {
+            const gapW = bi.w * SC, midX = bi.x + gapW / 2;
+            const label = (bi.item?.label || "").toUpperCase();
+            const dimY = FLOOR - TOE - 34.5 * SC / 2;
+            return (<g key={`a-${bi.id}`} onClick={handleGapClick(bi.item)} style={{ cursor: "pointer" }}>
+              <rect x={bi.x} y={dimY - 10} width={gapW} height={30} fill="transparent" />
+              <line x1={bi.x + 1} y1={dimY - 6} x2={bi.x + 1} y2={dimY + 6} stroke="#bbb" strokeWidth={0.6} />
+              <line x1={bi.x + gapW - 1} y1={dimY - 6} x2={bi.x + gapW - 1} y2={dimY + 6} stroke="#bbb" strokeWidth={0.6} />
+              <line x1={bi.x + 1} y1={dimY} x2={bi.x + gapW - 1} y2={dimY} stroke="#bbb" strokeWidth={0.5} strokeDasharray="3,2" />
+              <text x={midX} y={dimY - 4} textAnchor="middle" fontSize={8} fill="#999" fontWeight={600} fontFamily="monospace">{bi.w}"</text>
+              {label && <text x={midX} y={dimY + 11} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{label}</text>}
+            </g>);
+        })}
 
         <Box3D cx={PAD} cy={CTTOP} w={ctW} h={1.5} depth={25.5} front="none" top="none" side="none" stroke="#444" sw={1.3} />
 
-        {wallItems.map(wi => {
-          if (!wi.cab) {
-            const gapW = wi.w * SC, midX = wi.x + gapW / 2;
-            const label = (wi.item?.label || "").toUpperCase();
-            const dimY = WTOP + maxWH / 2;
-            return (<g key={`h-${wi.id}`} onClick={handleGapClick(wi.item)} style={{ cursor: "pointer" }}>
-              {/* Thin bracket lines at edges */}
-              <line x1={wi.x + 1} y1={dimY - 6} x2={wi.x + 1} y2={dimY + 6} stroke="#bbb" strokeWidth={0.6} />
-              <line x1={wi.x + gapW - 1} y1={dimY - 6} x2={wi.x + gapW - 1} y2={dimY + 6} stroke="#bbb" strokeWidth={0.6} />
-              <line x1={wi.x + 1} y1={dimY} x2={wi.x + gapW - 1} y2={dimY} stroke="#bbb" strokeWidth={0.5} strokeDasharray="3,2" />
-              {/* Width */}
-              <text x={midX} y={dimY - 4} textAnchor="middle" fontSize={8} fill="#999" fontWeight={600} fontFamily="monospace">{wi.w}"</text>
-              {/* Label if named */}
-              {label && <text x={midX} y={dimY + 11} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{label}</text>}
-            </g>);
-          }
+        {/* Wall cabinets first */}
+        {wallItems.filter(wi => wi.cab).map(wi => {
           const c = wi.cab, ch = c.height || 30, d = c.depth || 12;
           const isSelected = selectedId === wi.id;
           const isDragging = drag?.started && drag.id === wi.id;
           const dragTx = isDragging ? `translate(${drag.dx / (svgRef.current ? svgRef.current.getBoundingClientRect().width / svgW : 1)}, 0)` : undefined;
           return (<g key={`w-${wi.id}`} onClick={!drag?.started ? handleClick(wi.id) : undefined} onDoubleClick={handleDblClick(wi.id)} onContextMenu={handleContextMenu(wi.id, "wall")} onPointerDown={onPointerDown(wi.id)} style={{ cursor: isDragging ? "grabbing" : "grab" }} transform={dragTx}>
-            <rect x={wi.x - 4} y={WTOP - 20} width={c.width * SC + 8} height={ch * SC + 28} fill="transparent" />
+            <rect x={wi.x} y={WTOP - 20} width={c.width * SC} height={ch * SC + 28} fill="transparent" />
             {isSelected && highlightRect(wi.x, WTOP, c.width, ch, "wall")}
             <Box3D cx={wi.x} cy={WTOP} w={c.width} h={ch} depth={d} front="#fff" top="#eee" side="#ddd" />
             <Face cab={c} cx={wi.x} cy={WTOP} w={c.width} h={ch} />
@@ -225,6 +215,21 @@ export default function InteractiveRender({ spec, selectedId, onSelect, onDouble
             <text x={wi.x + c.width * SC / 2} y={WTOP - 15} textAnchor="middle" fontSize={6.5} fill="#888" fontFamily="monospace">{c.width}x{ch}x{d}</text>
             {isDragging && <text x={wi.x + c.width * SC / 2} y={WTOP - 22} textAnchor="middle" fontSize={10} fill="#1a6fbf" fontWeight={700} fontFamily="monospace">{drag.dxInches > 0 ? "+" : ""}{drag.dxInches}"</text>}
           </g>);
+        })}
+
+        {/* Wall gaps on top (clickable) */}
+        {wallItems.filter(wi => !wi.cab).map(wi => {
+            const gapW = wi.w * SC, midX = wi.x + gapW / 2;
+            const label = (wi.item?.label || "").toUpperCase();
+            const dimY = WTOP + maxWH / 2;
+            return (<g key={`h-${wi.id}`} onClick={handleGapClick(wi.item)} style={{ cursor: "pointer" }}>
+              <rect x={wi.x} y={dimY - 10} width={gapW} height={30} fill="transparent" />
+              <line x1={wi.x + 1} y1={dimY - 6} x2={wi.x + 1} y2={dimY + 6} stroke="#bbb" strokeWidth={0.6} />
+              <line x1={wi.x + gapW - 1} y1={dimY - 6} x2={wi.x + gapW - 1} y2={dimY + 6} stroke="#bbb" strokeWidth={0.6} />
+              <line x1={wi.x + 1} y1={dimY} x2={wi.x + gapW - 1} y2={dimY} stroke="#bbb" strokeWidth={0.5} strokeDasharray="3,2" />
+              <text x={midX} y={dimY - 4} textAnchor="middle" fontSize={8} fill="#999" fontWeight={600} fontFamily="monospace">{wi.w}"</text>
+              {label && <text x={midX} y={dimY + 11} textAnchor="middle" fontSize={7} fill="#aaa" fontFamily="monospace">{label}</text>}
+            </g>);
         })}
 
         {wallItems.length > 0 && (() => {
