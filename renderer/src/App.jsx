@@ -275,7 +275,9 @@ function EditorApp({ roomId, projectId, projectName, rooms, onRoomChange, onBack
   const [isDragging, setIsDragging] = useState(false);
   const [jsonOpen, setJsonOpen] = useState(false);
   const [exampleHover, setExampleHover] = useState(false);
-  const [wallLength, setWallLength] = useState(null); // user-entered actual wall measurement
+  const wallLengthKey = `wallLength_${projectId}_${roomId}`;
+  const [wallLength, setWallLengthState] = useState(() => { const s = localStorage.getItem(wallLengthKey); return s ? parseFloat(s) : null; });
+  const setWallLength = (v) => { setWallLengthState(v); if (v) localStorage.setItem(wallLengthKey, v); else localStorage.removeItem(wallLengthKey); };
 
   // Ref to the width input in the bottom bar — passed to GridEditor for double-click focus
   const widthInputRef = useRef(null);
